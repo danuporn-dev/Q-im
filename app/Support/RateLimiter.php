@@ -9,7 +9,9 @@ final class RateLimiter
     public static function hit(string $name, string $subject, int $limit, int $seconds): void
     {
         if (Env::isDevelopment()) {
+            // Test hooks: looser limits, and counters that earlier runs cannot fill.
             $limit *= max(1, (int) Env::get('RATE_LIMIT_MULTIPLIER', '1'));
+            $subject .= Env::get('RATE_LIMIT_SCOPE');
         }
         $now = time();
         $window = intdiv($now, $seconds) * $seconds;

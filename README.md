@@ -2,7 +2,9 @@
 
 Smart Food Court Platform: สั่งอาหารล่วงหน้า คิวอัตโนมัติ รับเอง
 
-**สถานะ:** Phase 0 และฐานข้อมูลของ Phase 1 พร้อม flow ลูกค้าและร้านครบ (Phase 1–6) รายละเอียดโปรเจกต์อยู่ใน [CLAUDE.md](CLAUDE.md), ERD อยู่ใน [docs/erd.md](docs/erd.md)
+**สถานะ:** MVP ครบ Phase 0–9 ในเครื่องพัฒนา ยังไม่ทดสอบกับ LINE จริงและยังไม่ deploy
+
+เอกสาร: [CLAUDE.md](CLAUDE.md) · [ERD](docs/erd.md) · [decisions](docs/decisions.md) · [progress](docs/PROGRESS.md) · [LINE setup](docs/line-setup.md) · [deploy](docs/deploy.md)
 
 ## ติดตั้งบน XAMPP / Windows
 
@@ -25,6 +27,26 @@ Smart Food Court Platform: สั่งอาหารล่วงหน้า �
 `migrate.php` สร้าง database ตาม `DB_NAME` (ค่าเริ่มต้น `qim_dev`) ถ้ายังไม่มี รันซ้ำได้ และปฏิเสธ database ที่มีตารางอื่นอยู่แล้ว ห้ามแก้ migration ที่รันแล้ว ให้เพิ่มไฟล์ใหม่
 
 `seed.php` รันได้เฉพาะ `APP_ENV=development` รันซ้ำไม่แก้ข้อมูลเดิม รวมถึงรหัสผ่านเดิม บัญชี demo: `demo_admin`, `demo_merchant_1`, `demo_merchant_2`
+
+## ใช้งาน
+
+| หน้า | URL (built-in server) | เข้าใช้ |
+|---|---|---|
+| ลูกค้า | `http://localhost:8000/customer/` | ปุ่ม Demo (เฉพาะ development) หรือ LINE |
+| ร้าน | `http://localhost:8000/merchant/` | `demo_merchant_1`, `demo_merchant_2` |
+| ผู้ดูแล | `http://localhost:8000/admin/` | `demo_admin` |
+
+รหัสผ่าน demo คือ `SEED_DEMO_PASSWORD` ใน `.env` ร้าน demo เปิดจันทร์–ศุกร์ 07:00–17:00
+
+## ทดสอบ
+
+```powershell
+C:\xampp\php\php.exe tests\run.php       # ทั้งหมด (ใช้ qim_dev, port 8111-8183)
+C:\xampp\php\php.exe tests\run.php 05    # เฉพาะบางไฟล์
+C:\xampp\php\php.exe scripts\e2e.php     # หนึ่งออเดอร์ครบวงจรผ่าน HTTP
+```
+
+แจ้งเตือน LINE: `php scripts/notify.php [--watch]`
 
 ## Document root ต้องเป็น `public/`
 

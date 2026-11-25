@@ -74,7 +74,7 @@ final class Servers
             $command[] = $router;
         }
         $null = ['file', PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null', 'w'];
-        $process = proc_open($command, [1 => $null, 2 => $null], $pipes, dirname(__DIR__), $env + getenv(), ['bypass_shell' => true]);
+        $process = proc_open($command, [1 => $null, 2 => $null], $pipes, dirname(__DIR__), $env + ['RATE_LIMIT_SCOPE' => getmypid() . '-' . $_SERVER['REQUEST_TIME'] . '-' . ($env['RATE_LIMIT_MULTIPLIER'] ?? '')] + getenv(), ['bypass_shell' => true]);
         if (!is_resource($process)) {
             throw new RuntimeException('Cannot start PHP server.');
         }

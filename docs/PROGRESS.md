@@ -9,7 +9,7 @@
 | 2 auth, session, RBAC | เสร็จ |
 | 3 shop/menu management, discovery | เสร็จ |
 | 4 customer UI, cart, checkout | เสร็จ |
-| 5 accept/reject, queue, tracking | รอทำ |
+| 5 accept/reject, queue, tracking | เสร็จ |
 | 6 prepare/ready/pickup/payment, e2e | รอทำ |
 | 7 LINE | รอทำ |
 | 8 admin, reports, audit | รอทำ |

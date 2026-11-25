@@ -6,12 +6,41 @@ namespace App\Controllers;
 use App\Services\Auth;
 use App\Services\Catalog;
 use App\Services\Images;
+use App\Services\OrderFlow;
+use App\Services\Orders;
 use App\Services\ShopAdmin;
 use App\Support\RateLimiter;
 use App\Support\Request;
 
 final class MerchantController
 {
+    public static function orders(Request $q, int $shopId): array
+    {
+        self::member($q, $shopId);
+        $scope = $q->query('scope') === 'closed' ? 'closed' : 'active';
+        [$page, $per, $offset] = $q->page($scope === 'active' ? 200 : 20);
+        [$rows, $total] = Orders::ofShop($shopId, $scope, $per, $offset);
+        return [$rows, 200, ['page' => $page, 'per_page' => $per, 'total' => $total]];
+    }
+
+    public static function order(Request $q, int $orderId): array
+    {
+        $user = Auth::user($q, 'merchant');
+        $order = Orders::shopOrder($orderId);
+        Auth::requireShop($user['id'], (int) $order['shop']['id']);
+        return [$order, 200];
+    }
+
+    /** Handler for one state transition. */
+    public static function transition(string $action): callable
+    {
+        return static function (Request $q, int $orderId) use ($action): array {
+            $user = Auth::user($q, 'merchant');
+            OrderFlow::byMerchant($user['id'], $orderId, $action, $q->json());
+            return [Orders::shopOrder($orderId), 200];
+        };
+    }
+
     public static function settings(Request $q, int $shopId): array
     {
         self::member($q, $shopId);

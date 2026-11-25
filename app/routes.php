@@ -46,4 +46,11 @@ return static function (Router $r): void {
     $r->add('POST', '/merchant/shops/{id}/categories', [MerchantController::class, 'createCategory']);
     $r->add('PATCH', '/merchant/shops/{id}/categories/{sub}', [MerchantController::class, 'updateCategory']);
     $r->add('POST', '/merchant/shops/{id}/images', [MerchantController::class, 'upload']);
+
+    // Merchant: orders
+    $r->add('GET', '/merchant/shops/{id}/orders', [MerchantController::class, 'orders']);
+    $r->add('GET', '/merchant/orders/{id}', [MerchantController::class, 'order']);
+    foreach (['accept', 'reject', 'prepare', 'ready', 'cancel'] as $action) {
+        $r->add('POST', "/merchant/orders/{id}/$action", MerchantController::transition($action));
+    }
 };

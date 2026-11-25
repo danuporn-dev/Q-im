@@ -61,6 +61,15 @@ final class Fixture
         return $c;
     }
 
+    /** Places an order for one main dish through the API. @return array{0: Client, 1: int} */
+    public static function order(string $base, string $tag, array $shop): array
+    {
+        $c = self::customer($base, $tag);
+        $cart = $c->put('/api/v1/cart', ['shop_id' => $shop['shop'], 'items' => [['menu_id' => $shop['menu'], 'quantity' => 1]], 'replace' => true]);
+        $r = $c->post('/api/v1/orders', ['idempotency_key' => bin2hex(random_bytes(16)), 'quote' => $cart['body']['data']['quote'] ?? '']);
+        return [$c, $r['body']['data']['id'] ?? throw new RuntimeException('order: ' . $r['raw'])];
+    }
+
     /** Test shops must not show up for people using the development site. */
     public static function closeShops(): void
     {

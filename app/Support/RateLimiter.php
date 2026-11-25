@@ -33,6 +33,13 @@ final class RateLimiter
         }
     }
 
+    /** Takes one hit back, for limits that count failures only. Counting first keeps parallel attempts from slipping through. */
+    public static function refund(string $name, string $subject, int $seconds): void
+    {
+        $window = intdiv(Clock::timestamp(), $seconds) * $seconds;
+        Database::run('UPDATE rate_limits SET hits = hits - 1 WHERE bucket = ? AND window_start = ? AND hits > 0', [self::bucket($name, $subject), $window]);
+    }
+
     /** Forgets the current and earlier windows, for example after a successful login. */
     public static function clear(string $name, string $subject): void
     {

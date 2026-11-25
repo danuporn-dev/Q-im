@@ -23,6 +23,7 @@ final class AuthController
             'liff_id' => Env::get('LIFF_ID') ?: null,
             'dev_login' => Env::isDevelopment(),
             'demo_customers' => Env::isDevelopment() ? DevMockIdentity::CUSTOMERS : null,
+            'demo_code_required' => Env::isDevelopment() && Env::get('DEMO_ACCESS_CODE') !== '',
             'poll_seconds' => self::pollSeconds(),
         ], 200];
     }
@@ -40,7 +41,27 @@ final class AuthController
         if (!Env::isDevelopment()) {
             throw HttpError::notFound('ไม่พบเส้นทางที่ร้องขอ');
         }
+        Auth::checkJson($q);
+        self::checkDemoCode($q);
         return self::customer($q, new DevMockIdentity(), 'customer');
+    }
+
+    /** DEMO_ACCESS_CODE keeps strangers out of a demo that is open to the internet. Never log the submitted value. */
+    private static function checkDemoCode(Request $q): void
+    {
+        $code = Env::get('DEMO_ACCESS_CODE');
+        if ($code === '') {
+            return;
+        }
+        $given = $q->json()['access_code'] ?? '';
+        if (!is_string($given) || $given === '') {
+            throw new HttpError(403, 'DEMO_CODE_REQUIRED', 'กรุณากรอกรหัสเข้าชมการสาธิต');
+        }
+        RateLimiter::hit('demo-code', $q->ip(), 20, 900);
+        if (!hash_equals(hash('sha256', $code), hash('sha256', $given))) {
+            throw new HttpError(403, 'DEMO_CODE_WRONG', 'รหัสเข้าชมการสาธิตไม่ถูกต้อง');
+        }
+        RateLimiter::refund('demo-code', $q->ip(), 900);
     }
 
     /** Simulated LINE chat of the signed-in customer. This route does not exist outside development either. */

@@ -65,9 +65,11 @@ async function requireLogin() {
 }
 
 // Both need the server to run with APP_ENV=development; /auth/dev does not exist otherwise.
+let demoCode = ''; // kept for this page only, so switching customers does not ask again
 const demoLogin = (done) => h('section.card.stack', {}, h('p.notice', {}, 'โหมดสาธิต ใช้แทน LINE Login แตะเพื่อเข้าเป็นลูกค้า'),
+  config.demo_code_required ? h('label.field', {}, h('span', {}, 'รหัสเข้าชมการสาธิต'), h('input', { type: 'password', name: 'access_code', autocomplete: 'off', maxlength: 200, value: demoCode, oninput: (e) => { demoCode = e.target.value; } })) : null,
   Object.entries(config.demo_customers || {}).map(([key, name]) => h('button.btn.block', { type: 'button', onclick: (e) => busy(e.currentTarget, async () => {
-    await post('/auth/dev', { customer: key });
+    await post('/auth/dev', config.demo_code_required ? { customer: key, access_code: demoCode.trim() } : { customer: key });
     await loadMe();
     await done();
   }) }, `${name} (ลูกค้าสาธิต)`)));

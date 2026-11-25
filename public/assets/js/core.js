@@ -155,8 +155,24 @@ export const loading = () => h('div.state', { role: 'status' }, h('div.spinner',
 export const empty = (text, ...extra) => h('div.state', {}, h('p', {}, text), extra);
 export const failed = (e, retry) => h('div.state', { role: 'alert' }, h('p', {}, e.message), h('button.btn.ghost', { type: 'button', onclick: retry }, 'ลองใหม่'));
 
+// POLL_SECONDS of the server; null keeps the interval of each page.
+let pollEvery = null;
+export const setPoll = (seconds) => { pollEvery = seconds ? seconds * 1000 : null; };
+
+/** The returned function tells whether a value differs from the last one, so unchanged data is not drawn again. */
+export function changes() {
+  let last;
+  return (value) => {
+    const now = JSON.stringify(value);
+    const changed = now !== last;
+    last = now;
+    return changed;
+  };
+}
+
 /** Polls while the page is visible; backs off on errors. Returns stop(). */
-export function poll(task, every = 7000) {
+export function poll(task, interval = 7000) {
+  const every = pollEvery ?? interval;
   let stopped = false;
   let delay = every;
   let timer = 0;

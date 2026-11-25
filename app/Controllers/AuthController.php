@@ -18,7 +18,14 @@ final class AuthController
 {
     public static function config(Request $q): array
     {
-        return [['liff_id' => Env::get('LIFF_ID') ?: null, 'dev_login' => Env::isDevelopment()], 200];
+        return [['liff_id' => Env::get('LIFF_ID') ?: null, 'dev_login' => Env::isDevelopment(), 'poll_seconds' => self::pollSeconds()], 200];
+    }
+
+    /** Null (unset or not a whole number from 2 to 60) keeps the intervals built into the pages. */
+    private static function pollSeconds(): ?int
+    {
+        $value = filter_var(Env::get('POLL_SECONDS'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 2, 'max_range' => 60]]);
+        return $value === false ? null : $value;
     }
 
     public static function dev(Request $q): array

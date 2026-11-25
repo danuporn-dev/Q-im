@@ -1,4 +1,4 @@
-import { $, api, askReason, badge, baht, busy, dateTime, dialog, empty, failed, field, get, h, loading, loginForm, patch, picture, poll, post, queueNo, setCsrf, time, toast, today } from './core.js';
+import { $, api, askReason, badge, baht, busy, changes, dateTime, dialog, empty, failed, field, get, h, loading, loginForm, patch, picture, poll, post, queueNo, setCsrf, setPoll, time, toast, today } from './core.js';
 
 const app = $('#app');
 let me = null;
@@ -12,6 +12,7 @@ async function start() {
   app.replaceChildren(loading());
   try {
     me = await get('/me?realm=merchant');
+    setPoll((await get('/config')).poll_seconds);
   } catch (e) {
     if (e.status !== 401) return app.replaceChildren(failed(e, start));
     return app.replaceChildren(loginForm('merchant', 'เข้าสู่ระบบร้านค้า', start));
@@ -53,8 +54,11 @@ let known = null;
 async function orders(main) {
   const status = h('div.row');
   const board = h('div.board');
+  const changed = changes();
   const draw = async () => {
     const [list, shop] = await Promise.all([get(`/merchant/shops/${shopId}/orders?scope=active`), get(`/merchant/shops/${shopId}/settings`)]);
+    // Drawing unchanged cards again could swallow a click; the clock part keeps waiting times current.
+    if (!changed([list, shop, Math.floor(Date.now() / 15000)])) return;
     const pending = list.filter((o) => o.status === 'PENDING');
     if (known && pending.some((o) => !known.has(o.id))) { toast('มีออเดอร์ใหม่'); beep(); }
     known = new Set(list.map((o) => o.id));

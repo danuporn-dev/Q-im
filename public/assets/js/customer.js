@@ -1,4 +1,4 @@
-import { $, STATUS, api, badge, baht, busy, confirmBox, dateTime, dialog, empty, eta, failed, get, h, loading, picture, poll, post, put, queueNo, setCsrf, time, toast } from './core.js';
+import { $, STATUS, api, badge, baht, busy, changes, confirmBox, dateTime, dialog, empty, eta, failed, get, h, loading, picture, poll, post, put, queueNo, setCsrf, setPoll, time, toast } from './core.js';
 
 const app = $('#app');
 let config = { liff_id: null, dev_login: false };
@@ -25,6 +25,7 @@ async function boot() {
   app.replaceChildren(loading());
   try {
     config = await get('/config');
+    setPoll(config.poll_seconds);
     await loadMe();
     if (config.liff_id) {
       // Loaded only when LINE is configured; the site still works without it.
@@ -138,9 +139,10 @@ const shopCard = (s) => h('a.item' + (s.is_open ? '' : '.off'), { href: `#/shop/
 async function home(alive) {
   let category = '';
   const list = h('div.list');
+  const changed = changes();
   const draw = async () => {
     const shops = await get('/shops' + (category ? `?category=${encodeURIComponent(category)}` : ''));
-    list.replaceChildren(...(shops.length ? shops.map(shopCard) : [empty('ยังไม่มีร้านในหมวดนี้')]));
+    if (changed(shops)) list.replaceChildren(...(shops.length ? shops.map(shopCard) : [empty('ยังไม่มีร้านในหมวดนี้')]));
   };
   const categories = await get('/categories');
   await draw();
@@ -329,8 +331,10 @@ async function orders(alive) {
   const list = h('div.list');
   const chips = h('div.chips', { role: 'group', 'aria-label': 'ประเภทออเดอร์' });
   const more = h('div.row.end');
+  const changed = changes();
   const draw = async () => {
     const { data, meta } = await api('GET', `/orders?scope=${scope}&page=${page}`);
+    if (!changed([page, data, meta])) return;
     list.replaceChildren(...(data.length ? data.map((o) => h('a.item', { href: `#/order/${o.id}` }, h('div.grow', {}, h('div.row.between', {}, h('h3', {}, o.shop.name), badge(o.status)), h('div.muted', {}, dateTime(o.created_at), ' · ', o.order_no), h('div', {}, o.items.map((i) => `${i.quantity} × ${i.name}`).join(', ')), h('div.row.between', {}, o.queue ? h('b', {}, queueNo(o.queue.number)) : h('span'), h('span.price', {}, baht(o.total)))))) : [empty('ไม่มีออเดอร์ในส่วนนี้')]));
     const pages = Math.ceil(meta.total / meta.per_page);
     const turnPage = (d) => (e) => busy(e.currentTarget, async () => { page += d; await draw(); });

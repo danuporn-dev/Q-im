@@ -23,6 +23,8 @@ final class OrderFlow
         'ready' => [['PREPARING'], 'READY', false, 'ORDER_READY'],
         'cancel' => [['PENDING', 'ACCEPTED', 'PREPARING', 'READY'], 'CANCELLED', true, 'ORDER_CANCELLED'],
     ];
+    /** Audit action of a hand-over without the pickup code. */
+    public const PICKUP_OVERRIDE = 'pickup.override';
     private const STAMP = ['ACCEPTED' => 'accepted_at', 'PREPARING' => 'preparing_at', 'READY' => 'ready_at', 'COMPLETED' => 'completed_at'];
 
     /** Minutes an order may stay READY before the shop is alerted and may close it as a no-show. */
@@ -118,7 +120,7 @@ final class OrderFlow
                 }
             } else {
                 $reason = 'รับโดยไม่ใช้รหัส: ' . Input::text($in, 'override_reason', 'รหัสรับอาหารหรือเหตุผล', 300, 3);
-                Audit::log($userId, 'pickup.override', 'order', $orderId, ['reason' => $reason]);
+                Audit::log($userId, self::PICKUP_OVERRIDE, 'order', $orderId, ['shop_id' => (int) $order['shop_id'], 'reason' => $reason]);
             }
             self::move($order, 'COMPLETED', $userId, $reason);
         });

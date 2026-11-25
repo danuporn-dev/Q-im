@@ -25,7 +25,7 @@ final class AdminController
         $r->add('GET', '/admin/shops', self::listing(static fn (Request $q, int $n, int $o): array => Admin::shops($q->query('q'), $n, $o)));
         $r->add('GET', '/admin/users', self::listing(static fn (Request $q, int $n, int $o): array => Admin::users($q->query('q'), $q->query('role'), $n, $o)));
         $r->add('GET', '/admin/orders', self::listing(static fn (Request $q, int $n, int $o): array => Admin::orders($q->query('q'), $q->query('status'), (int) $q->query('shop_id'), $n, $o)));
-        $r->add('GET', '/admin/audit-logs', self::listing(static fn (Request $q, int $n, int $o): array => Admin::auditLogs($q->query('q'), $n, $o)));
+        $r->add('GET', '/admin/audit-logs', self::listing(static fn (Request $q, int $n, int $o): array => Admin::auditLogs($q->query('q'), mb_substr($q->query('action'), 0, 100), $n, $o)));
 
         $r->add('POST', '/admin/food-courts', self::write(static fn (int $me, array $in): array => Admin::saveFoodCourt($me, null, $in), 201));
         $r->add('PATCH', '/admin/food-courts/{id}', self::write(static fn (int $me, array $in, int $id): array => Admin::saveFoodCourt($me, $id, $in)));

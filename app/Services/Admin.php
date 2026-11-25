@@ -58,8 +58,14 @@ final class Admin
                 $members[$shopId][] = $m;
             }
         }
+        $overrides = $rows === [] ? [] : array_column(Database::rows(
+            "SELECT o.shop_id, COUNT(*) AS n FROM audit_logs a JOIN orders o ON o.id = a.entity_id
+             WHERE a.entity_type = 'order' AND a.action = ? AND o.shop_id IN (" . implode(',', array_column($rows, 'id')) . ') GROUP BY o.shop_id',
+            [OrderFlow::PICKUP_OVERRIDE]
+        ), 'n', 'shop_id');
         foreach ($rows as &$row) {
             $row['members'] = $members[$row['id']] ?? [];
+            $row['pickup_overrides'] = (int) ($overrides[$row['id']] ?? 0);
         }
         return [$rows, (int) Database::value('SELECT COUNT(*) FROM shops s WHERE s.name LIKE ?', [$like])];
     }
@@ -257,10 +263,14 @@ final class Admin
     }
 
     /** @return array{0: list<array>, 1: int} */
-    public static function auditLogs(string $q, int $limit, int $offset): array
+    public static function auditLogs(string $q, string $action, int $limit, int $offset): array
     {
         $from = 'FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_user_id WHERE (a.action LIKE ? OR u.display_name LIKE ?)';
         $params = [self::like($q), self::like($q)];
+        if ($action !== '') {
+            $from .= ' AND a.action = ?';
+            $params[] = $action;
+        }
         $rows = Database::rows("SELECT a.id, a.action, a.entity_type, a.entity_id, a.safe_metadata, a.created_at, u.display_name AS actor $from ORDER BY a.id DESC LIMIT $limit OFFSET $offset", $params);
         foreach ($rows as &$row) {
             $row['created_at'] = Clock::iso($row['created_at']);

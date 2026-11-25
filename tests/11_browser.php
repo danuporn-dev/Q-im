@@ -127,7 +127,7 @@ try {
     foreach ([390, 768, 1280] as $width) {
         $b->size($width);
         $bad = [];
-        foreach (['overview' => 'ภาพรวมวันนี้', 'orders' => $shopName, 'shops' => 'เพิ่มร้าน', 'courts' => 'เพิ่มโรงอาหาร', 'users' => 'เพิ่มบัญชี', 'reports' => 'รายงานรวม', 'audit' => 'auth.login', 'settings' => 'LINE Webhook'] as $tab => $text) {
+        foreach (['overview' => 'ภาพรวมวันนี้', 'orders' => $shopName, 'shops' => 'เพิ่มร้าน', 'courts' => 'เพิ่มโรงอาหาร', 'users' => 'เพิ่มบัญชี', 'reports' => 'รายงานรวม', 'audit' => 'เข้าสู่ระบบ', 'settings' => 'LINE Webhook'] as $tab => $text) {
             $b->js("location.hash='#/$tab'");
             if (!$b->sees($text) || $b->overflow() > 0) {
                 $bad[] = $tab;
@@ -135,6 +135,13 @@ try {
         }
         T::eq([], $bad, "admin pages fit $width px");
     }
+    $b->js("location.hash='#/shops'");
+    T::ok($b->sees('ส่งมอบไม่ใช้รหัส'), 'admin shops show the hand-over count');
+    $b->js("location.hash='#/audit'");
+    $b->until("document.querySelector('select[name=action]')");
+    $b->js("document.querySelector('select[name=action]').value='order.no_show'");
+    $b->click('ค้นหา');
+    T::ok($b->until("document.querySelectorAll('tbody tr').length>0&&[...document.querySelectorAll('tbody tr')].every(r=>r.innerText.includes('ลูกค้าไม่มารับ'))"), 'audit filter shows only the chosen kind');
     T::eq([], $b->errors, 'no script errors, dialogs or CSP violations on any page');
     $m->post("/api/v1/merchant/orders/$order/reject", ['reason' => 'ทดสอบ']);
     $m->post("/api/v1/merchant/orders/$fresh/reject", ['reason' => 'ทดสอบ']);

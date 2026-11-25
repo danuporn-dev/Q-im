@@ -163,7 +163,7 @@ async function menus(main) {
         h('div.row', {}, m.active ? h('button.btn.ghost', { type: 'button', onclick: (e) => busy(e.currentTarget, async () => { await patch(`/merchant/menus/${m.id}`, { available: !m.available }); await reload(); }) }, m.available ? 'แจ้งหมด' : 'มีแล้ว') : null, h('button.btn.ghost', { type: 'button', onclick: () => editMenu(m, data.categories, reload) }, 'แก้ไข')))))));
   };
   main.replaceChildren(h('div.row.between', {}, h('h1', {}, 'เมนู'), h('div.row', {}, h('button.btn.ghost', { type: 'button', onclick: () => editCategory(null, reload) }, 'เพิ่มหมวด'), h('button.btn', { type: 'button', onclick: () => editMenu(null, data.categories, reload) }, 'เพิ่มเมนู'))),
-    h('div.stack', {}, data.categories.map(section), section(null)), data.menus.length ? null : empty('ยังไม่มีเมนู'));
+    h('div.stack', {}, data.categories.map(section), section(null)), data.menus.length ? '' : empty('ยังไม่มีเมนู'));
 }
 
 async function editCategory(category, reload) {

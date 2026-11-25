@@ -45,7 +45,7 @@ try {
     $b->send('Page.reload');
     T::ok($b->sees('รอร้านยืนยัน'), 'order restored after reload');
 
-    foreach ([320, 390, 768, 1280] as $width) {
+    foreach ([320, 390, 768, 1280, 1920] as $width) {
         $b->size($width);
         $bad = [];
         foreach (['#/', '#/search', '#/cart', '#/orders', '#/profile', '#/help', "#/shop/{$s['shop']}", "#/order/$order"] as $hash) {
@@ -106,12 +106,12 @@ try {
     $b->click('ยกเลิกออเดอร์', $dialog);
     T::ok($b->until("!document.body.innerText.includes('พร้อมรับมา 21 นาที')"), 'no-show button cancels the order on the board');
     T::eq(['CANCELLED', 'ติดต่อลูกค้าไม่ได้'], [Database::value('SELECT status FROM orders WHERE id = ?', [$ready]), Database::value('SELECT reason FROM order_status_logs WHERE order_id = ? ORDER BY id DESC LIMIT 1', [$ready])], 'saved with its reason');
-    foreach ([390, 768, 1280] as $width) {
+    foreach ([390, 768, 1280, 1920] as $width) {
         $b->size($width);
         $bad = [];
         foreach (['orders' => 'พร้อมรับ', 'history' => 'ประวัติออเดอร์', 'menus' => 'เพิ่มเมนู', 'settings' => 'ทำพร้อมกันได้', 'reports' => 'ยอดขาย'] as $tab => $text) {
             $b->js("location.hash='#/$tab'");
-            if (!$b->sees($text) || $b->overflow() > 0) {
+            if (!$b->sees($text) || $b->overflow() > 0 || $b->js("/\\bnull\\b/.test(document.querySelector('main').innerText)")) {
                 $bad[] = $tab;
             }
         }
@@ -124,7 +124,7 @@ try {
     $b->fill('input[name=password]', $pw);
     $b->click('เข้าสู่ระบบ');
     T::ok($b->sees('ภาพรวมวันนี้'), 'admin overview');
-    foreach ([390, 768, 1280] as $width) {
+    foreach ([390, 768, 1280, 1920] as $width) {
         $b->size($width);
         $bad = [];
         foreach (['overview' => 'ภาพรวมวันนี้', 'orders' => $shopName, 'shops' => 'เพิ่มร้าน', 'courts' => 'เพิ่มโรงอาหาร', 'users' => 'เพิ่มบัญชี', 'reports' => 'รายงานรวม', 'audit' => 'เข้าสู่ระบบ', 'settings' => 'LINE Webhook'] as $tab => $text) {

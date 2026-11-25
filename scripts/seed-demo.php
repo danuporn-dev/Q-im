@@ -48,11 +48,11 @@ function picture(string $file, string $name, int $hue): string
     $lines = preg_split('/\|/', $name);
     $label = '';
     foreach ($lines as $i => $line) {
-        $y = 200 + ($i - (count($lines) - 1) / 2) * 62 + 16;
+        $y = 200 + ($i - (count($lines) - 1) / 2) * 50 + 14;
         $label .= "<text x=\"200\" y=\"$y\">" . htmlspecialchars($line, ENT_XML1) . '</text>';
     }
     $svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 400 400\" width=\"400\" height=\"400\"><rect width=\"400\" height=\"400\" fill=\"hsl($hue,48%,86%)\"/>"
-        . "<g fill=\"hsl($hue,55%,24%)\" font-family=\"Leelawadee UI,Noto Sans Thai,Thonburi,sans-serif\" font-size=\"48\" font-weight=\"700\" text-anchor=\"middle\">$label</g></svg>";
+        . "<g fill=\"hsl($hue,55%,24%)\" font-family=\"Leelawadee UI,Noto Sans Thai,Thonburi,sans-serif\" font-size=\"40\" font-weight=\"700\" text-anchor=\"middle\">$label</g></svg>";
     $key = md5('demo' . $svg);
     file_put_contents("$root/storage/uploads/$key.svg", $svg);
     return "image:$key";
@@ -67,10 +67,10 @@ $glass = ['ขนาดแก้ว', 1, 1, [['16 ออนซ์', '0.00'], ['2
 $sweet = ['ระดับความหวาน', 1, 1, [['หวานปกติ', '0.00'], ['หวานน้อย', '0.00'], ['ไม่หวาน', '0.00']]];
 $topping = ['ท็อปปิง', 0, 2, [['ไข่มุก', '10.00'], ['วุ้นมะพร้าว', '10.00']]];
 
-// [name, picture, hue, description, capacity, average minutes, max active orders, login, staff name,
+// [name, picture, label, hue, description, capacity, average minutes, max active orders, login, staff name,
 //  category => [[menu, picture, label with | between lines, price, minutes, groups, description]]]
 $shops = [
-    ['ครัวป้าแดง อาหารตามสั่ง', 'shop-tamsang', 18, 'ผัดจานต่อจาน ข้าวหอมมะลิ', 2, 6, 25, 'demo_merchant_1', 'ป้าแดง', [
+    ['ครัวป้าแดง อาหารตามสั่ง', 'shop-tamsang', 'ครัวป้าแดง|อาหารตามสั่ง', 18, 'ผัดจานต่อจาน ข้าวหอมมะลิ', 2, 6, 25, 'demo_merchant_1', 'ป้าแดง', [
         'ข้าวราดแกง/ผัด' => [
             ['ข้าวกะเพราหมูสับ', 'kaphrao-mu', 'ข้าวกะเพรา|หมูสับ', '45.00', 5, [$spice, $extras], 'กะเพราแท้ ผัดไฟแรง'],
             ['ข้าวกะเพราไก่กรอบ', 'kaphrao-kai', 'ข้าวกะเพรา|ไก่กรอบ', '55.00', 7, [$spice, $extras], 'ไก่ทอดกรอบคลุกกะเพรา'],
@@ -83,7 +83,7 @@ $shops = [
             ['ต้มยำกุ้งน้ำข้น', 'tom-yam', 'ต้มยำกุ้ง|น้ำข้น', '80.00', 9, [$spice], 'กุ้งสด 4 ตัว พร้อมข้าวสวย'],
         ],
     ]],
-    ['ก๋วยเตี๋ยวเรือลุงหนวด', 'shop-kuaitiao', 200, 'น้ำซุปเคี่ยว 6 ชั่วโมง', 3, 4, 30, 'demo_merchant_2', 'ลุงหนวด', [
+    ['ก๋วยเตี๋ยวเรือลุงหนวด', 'shop-kuaitiao', 'ก๋วยเตี๋ยวเรือ|ลุงหนวด', 200, 'น้ำซุปเคี่ยว 6 ชั่วโมง', 3, 4, 30, 'demo_merchant_2', 'ลุงหนวด', [
         'ก๋วยเตี๋ยว' => [
             ['ก๋วยเตี๋ยวเรือหมู', 'ruea-mu', 'ก๋วยเตี๋ยวเรือ|หมู', '40.00', 4, [$noodle, $soup, $bowl], 'หมูนุ่ม ลูกชิ้น ตับ'],
             ['ก๋วยเตี๋ยวเรือเนื้อ', 'ruea-nuea', 'ก๋วยเตี๋ยวเรือ|เนื้อ', '50.00', 4, [$noodle, $soup, $bowl], 'เนื้อสดและเนื้อเปื่อย'],
@@ -96,7 +96,7 @@ $shops = [
             ['เกี๊ยวทอด', 'kiao-thot', 'เกี๊ยวทอด', '25.00', 3, [], '8 ชิ้น'],
         ],
     ]],
-    ['ชื่นใจ เครื่องดื่ม', 'shop-chuenchai', 150, 'ชา กาแฟ และผลไม้ปั่น', 2, 3, 40, 'demo_merchant_3', 'พี่ชื่น', [
+    ['ชื่นใจ เครื่องดื่ม', 'shop-chuenchai', 'ชื่นใจ|เครื่องดื่ม', 150, 'ชา กาแฟ และผลไม้ปั่น', 2, 3, 40, 'demo_merchant_3', 'พี่ชื่น', [
         'ชา/กาแฟ' => [
             ['ชาไทยเย็น', 'cha-thai', 'ชาไทยเย็น', '30.00', 2, [$glass, $sweet, $topping], 'ชาไทยเข้มข้น'],
             ['ชาเขียวนม', 'cha-khiao', 'ชาเขียวนม', '35.00', 2, [$glass, $sweet, $topping], 'หอมชาเขียวแท้'],
@@ -127,18 +127,18 @@ try {
     $image = $pdo->prepare('UPDATE menus SET image_url = ? WHERE id = ?');
     $shopImage = $pdo->prepare('UPDATE shops SET image_url = ? WHERE id = ?');
 
-    foreach ($shops as [$name, $file, $hue, $description, $capacity, $average, $max, $login, $staff, $categories]) {
+    foreach ($shops as [$name, $file, $label, $hue, $description, $capacity, $average, $max, $login, $staff, $categories]) {
         // No shop_hours rows: open at any time, so a rehearsal at night or on Sunday works too.
         $shop = ensure($pdo, 'shops', ['food_court_id' => $court, 'name' => $name], ['description' => $description, 'capacity' => $capacity, 'accepting_orders' => 1]);
-        $shopImage->execute([picture($file, str_replace(' ', '|', $name), $hue), $shop]);
+        $shopImage->execute([picture($file, $label, $hue), $shop]);
         ensure($pdo, 'shop_settings', ['shop_id' => $shop], ['avg_prep_minutes' => $average, 'max_active_orders' => $max], 'shop_id');
         $sort = 0;
         $tint = 0;
         foreach ($categories as $category => $menus) {
             $categoryId = ensure($pdo, 'categories', ['shop_id' => $shop, 'name' => $category], ['sort_order' => $sort++]);
-            foreach ($menus as [$menuName, $menuFile, $label, $price, $minutes, $groups, $text]) {
+            foreach ($menus as [$menuName, $menuFile, $menuLabel, $price, $minutes, $groups, $text]) {
                 $menu = ensure($pdo, 'menus', ['shop_id' => $shop, 'name' => $menuName], ['category_id' => $categoryId, 'price' => $price, 'prep_minutes' => $minutes, 'description' => $text]);
-                $image->execute([picture($menuFile, $label, ($hue + 14 * $tint++) % 360), $menu]);
+                $image->execute([picture($menuFile, $menuLabel, ($hue + 14 * $tint++) % 360), $menu]);
                 foreach ($groups as [$groupName, $min, $most, $options]) {
                     $group = ensure($pdo, 'menu_option_groups', ['menu_id' => $menu, 'name' => $groupName], ['min_select' => $min, 'max_select' => $most]);
                     foreach ($options as [$option, $delta]) {

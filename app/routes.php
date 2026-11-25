@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 use App\Controllers\AuthController;
 use App\Controllers\CatalogController;
+use App\Controllers\CustomerController;
 use App\Controllers\MerchantController;
 use App\Support\Database;
 use App\Support\Request;
@@ -27,6 +28,14 @@ return static function (Router $r): void {
     $r->add('GET', '/shops/{id}', [CatalogController::class, 'shop']);
     $r->add('GET', '/shops/{id}/menus', [CatalogController::class, 'menus']);
     $r->add('GET', '/images/{key}', [CatalogController::class, 'image']);
+
+    // Customer
+    $r->add('GET', '/cart', [CustomerController::class, 'cart']);
+    $r->add('PUT', '/cart', [CustomerController::class, 'updateCart']);
+    $r->add('POST', '/orders', [CustomerController::class, 'checkout']);
+    $r->add('GET', '/orders', [CustomerController::class, 'orders']);
+    $r->add('GET', '/orders/{id}', [CustomerController::class, 'order']);
+    $r->add('POST', '/orders/{id}/cancel', [CustomerController::class, 'cancel']);
 
     // Merchant: shop management
     $r->add('GET', '/merchant/shops/{id}/settings', [MerchantController::class, 'settings']);

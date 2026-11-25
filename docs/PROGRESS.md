@@ -8,7 +8,7 @@
 | 1 migrations, seed, API foundation | เสร็จ |
 | 2 auth, session, RBAC | เสร็จ |
 | 3 shop/menu management, discovery | เสร็จ |
-| 4 customer UI, cart, checkout | รอทำ |
+| 4 customer UI, cart, checkout | เสร็จ |
 | 5 accept/reject, queue, tracking | รอทำ |
 | 6 prepare/ready/pickup/payment, e2e | รอทำ |
 | 7 LINE | รอทำ |

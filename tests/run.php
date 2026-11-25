@@ -6,6 +6,8 @@ declare(strict_types=1);
 
 require __DIR__ . '/lib.php';
 
+require __DIR__ . '/fixture.php';
+
 $filter = $argv[1] ?? '';
 $base = Servers::start(8111, ['RATE_LIMIT_MULTIPLIER' => '1000']);
 

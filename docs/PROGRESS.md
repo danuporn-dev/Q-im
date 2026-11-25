@@ -6,7 +6,7 @@
 |---|---|
 | 0 scope, ERD | เสร็จ |
 | 1 migrations, seed, API foundation | เสร็จ |
-| 2 auth, session, RBAC | รอทำ |
+| 2 auth, session, RBAC | เสร็จ |
 | 3 shop/menu management, discovery | รอทำ |
 | 4 customer UI, cart, checkout | รอทำ |
 | 5 accept/reject, queue, tracking | รอทำ |

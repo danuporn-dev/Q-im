@@ -2,7 +2,8 @@
 declare(strict_types=1);
 
 // Usage: php tests/run.php [filter]   e.g. php tests/run.php 05
-// Real HTTP against PHP built-in servers and qim_dev. Test shops are left inactive; nothing is deleted.
+// Real HTTP against PHP built-in servers, on qim_dev or qim_fresh_test. Test rows stay in the database,
+// so prefer tests/clean_install.php, which uses a throw-away database.
 
 require __DIR__ . '/lib.php';
 
@@ -34,6 +35,9 @@ foreach (T::$failed as $label) {
 ksort(T::$ids);
 foreach (T::$ids as $id => $ok) {
     echo $id . '=' . ($ok ? 'pass' : 'FAIL') . ' ';
+}
+foreach (T::$skipped as $id => $why) {
+    echo "$id=SKIPPED($why) ";
 }
 echo "\n";
 exit(T::$failed === [] ? 0 : 1);

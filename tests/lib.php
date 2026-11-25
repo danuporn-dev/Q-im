@@ -8,8 +8,8 @@ use App\Support\Env;
 
 require dirname(__DIR__) . '/app/bootstrap.php';
 
-if (!Env::isDevelopment() || Database::name() !== 'qim_dev') {
-    fwrite(STDERR, "Tests run only with APP_ENV=development on qim_dev.\n");
+if (!Env::isDevelopment() || !in_array(Database::name(), ['qim_dev', 'qim_fresh_test'], true)) {
+    fwrite(STDERR, "Tests run only with APP_ENV=development on qim_dev or qim_fresh_test.\n");
     exit(1);
 }
 
@@ -20,6 +20,8 @@ final class T
     public static array $failed = [];
     /** @var array<string, bool> */
     public static array $ids = [];
+    /** @var array<string, string> */
+    public static array $skipped = [];
     public static string $current = '';
 
     public static function group(string $name): void
@@ -45,6 +47,13 @@ final class T
             self::$ids[$id] = false;
         }
         echo "  FAIL $label" . ($detail !== null ? ' :: ' . mb_substr(json_encode($detail, JSON_UNESCAPED_UNICODE), 0, 600) : '') . "\n";
+    }
+
+    /** A skipped test is reported as skipped, never as passed. */
+    public static function skip(string $id, string $why): void
+    {
+        self::$skipped[$id] = $why;
+        echo "\n# $id SKIPPED: $why\n";
     }
 
     public static function eq(mixed $expected, mixed $actual, string $label): void

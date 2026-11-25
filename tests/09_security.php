@@ -91,7 +91,7 @@ T::status(404, $thief->post("$a/merchant/shops/{$s['shop']}/images"), 'upload to
 T::status(404, $spy->get("$a/orders/$o"), 'other customer');
 
 T::group('Sessions and production mode');
-$prod = Servers::start(8181, ['APP_ENV' => 'production', 'LINE_API_BASE' => 'http://127.0.0.1:9', 'TEST_CLOCK_OFFSET' => '999999', 'DB_NAME' => 'qim_dev']);
+$prod = Servers::start(8181, ['APP_ENV' => 'production', 'LINE_API_BASE' => 'http://127.0.0.1:9', 'TEST_CLOCK_OFFSET' => '999999', 'DB_NAME' => Database::name()]);
 $p = new Client($prod);
 T::status(404, $p->post("$a/auth/dev", ['customer' => 'A']), 'no mock login');
 $broken = Servers::start(8182, ['APP_ENV' => 'production', 'DB_PASSWORD' => 'definitely-wrong']);

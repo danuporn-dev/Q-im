@@ -2,7 +2,7 @@
 
 Smart Food Court Platform: สั่งอาหารล่วงหน้า คิวอัตโนมัติ รับเอง
 
-**สถานะ:** Phase 0 และฐานข้อมูลของ Phase 1 ยังไม่มี API และ UI รายละเอียดโปรเจกต์อยู่ใน [CLAUDE.md](CLAUDE.md), ERD อยู่ใน [docs/erd.md](docs/erd.md)
+**สถานะ:** Phase 0 และฐานข้อมูลของ Phase 1 มี API foundation, ยังไม่มี UI รายละเอียดโปรเจกต์อยู่ใน [CLAUDE.md](CLAUDE.md), ERD อยู่ใน [docs/erd.md](docs/erd.md)
 
 ## ติดตั้งบน XAMPP / Windows
 

@@ -28,6 +28,16 @@ final class Env
         }
     }
 
+    public static function isDevelopment(): bool
+    {
+        return self::get('APP_ENV') === 'development';
+    }
+
+    public static function isProduction(): bool
+    {
+        return !self::isDevelopment();
+    }
+
     public static function get(string $key, string $default = ''): string
     {
         $real = getenv($key);

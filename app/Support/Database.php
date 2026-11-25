@@ -9,6 +9,97 @@ use RuntimeException;
 final class Database
 {
     private const SYSTEM_SCHEMAS = ['mysql', 'information_schema', 'performance_schema', 'sys', 'phpmyadmin'];
+    private static ?PDO $shared = null;
+
+    public static function pdo(): PDO
+    {
+        return self::$shared ??= self::connect();
+    }
+
+    /**
+     * Runs $work in one transaction; deadlocks and lock timeouts are retried from the start.
+     *
+     * @template T
+     * @param callable(PDO): T $work
+     * @return T
+     */
+    public static function tx(callable $work): mixed
+    {
+        $pdo = self::pdo();
+        for ($attempt = 1; ; $attempt++) {
+            $pdo->beginTransaction();
+            try {
+                $result = $work($pdo);
+                $pdo->commit();
+                return $result;
+            } catch (\Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                $code = $e instanceof \PDOException ? (int) ($e->errorInfo[1] ?? 0) : 0;
+                if (!in_array($code, [1205, 1213], true) || $attempt >= 5) {
+                    throw $e;
+                }
+                usleep(random_int(5, 40) * 1000 * $attempt);
+            }
+        }
+    }
+
+    public static function isDuplicate(\PDOException $e): bool
+    {
+        return (int) ($e->errorInfo[1] ?? 0) === 1062;
+    }
+
+    /** @return array<string, mixed>|null */
+    public static function row(string $sql, array $params = []): ?array
+    {
+        $stmt = self::pdo()->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetch() ?: null;
+    }
+
+    /** @return list<array<string, mixed>> */
+    public static function rows(string $sql, array $params = []): array
+    {
+        $stmt = self::pdo()->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
+    public static function value(string $sql, array $params = []): mixed
+    {
+        $stmt = self::pdo()->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchColumn();
+    }
+
+    /** @return int affected rows */
+    public static function run(string $sql, array $params = []): int
+    {
+        $stmt = self::pdo()->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->rowCount();
+    }
+
+    /** $table and the keys of $row must be trusted identifiers. */
+    public static function insert(string $table, array $row): int
+    {
+        $columns = '`' . implode('`, `', array_keys($row)) . '`';
+        $marks = implode(', ', array_fill(0, count($row), '?'));
+        self::run("INSERT INTO `$table` ($columns) VALUES ($marks)", array_values($row));
+        return (int) self::pdo()->lastInsertId();
+    }
+
+    /** $table and the keys of $changes must be trusted identifiers. */
+    public static function update(string $table, int $id, array $changes): void
+    {
+        if ($changes === []) {
+            return;
+        }
+        $set = implode(', ', array_map(static fn (string $c): string => "`$c` = ?", array_keys($changes)));
+        self::run("UPDATE `$table` SET $set WHERE id = ?", [...array_values($changes), $id]);
+    }
+
 
     public static function name(): string
     {
@@ -38,6 +129,8 @@ final class Database
             "SET SESSION time_zone = '+00:00', sql_mode = 'STRICT_ALL_TABLES,NO_ZERO_IN_DATE,"
             . "NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'"
         );
+        // Reads made after taking a row lock must see the latest committed data.
+        $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED');
         return $pdo;
     }
 

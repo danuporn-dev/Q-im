@@ -1,0 +1,2 @@
+# The project sits inside htdocs: block every file outside public/ (.env, .git, config, ...).
+Require all denied

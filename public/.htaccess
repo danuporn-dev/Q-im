@@ -1,0 +1,3 @@
+# Re-open only the document root (see ../.htaccess).
+Require all granted
+Options -Indexes

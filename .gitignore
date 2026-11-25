@@ -1,0 +1,18 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Private storage (logs, uploads)
+/storage/**
+!/storage/**/
+!/storage/**/.gitkeep
+
+# Local dumps, editor and OS files
+*.log
+*.sql.gz
+/backups/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -29,7 +29,6 @@ $court = $r['body']['data']['id'];
 $r = $admin->post("$a/admin/shops", ['name' => 'TEST admin shop ' . Fixture::run(), 'food_court_id' => $court, 'active' => false]);
 T::status(201, $r, 'create shop, not approved yet');
 $shop = $r['body']['data']['id'];
-Fixture::$shops[] = $shop;
 T::status(404, $c->get("$a/shops/$shop"), 'unapproved shop is hidden');
 $newLogin = 'test_m_' . strtolower(Fixture::run());
 $body = ['role' => 'merchant', 'display_name' => 'TEST แม่ค้า', 'login' => $newLogin, 'password' => Env::get('SEED_DEMO_PASSWORD')];

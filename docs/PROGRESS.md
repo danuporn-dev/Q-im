@@ -21,17 +21,10 @@
 ```powershell
 C:\xampp\php\php.exe tests\run.php        # ทุก test
 C:\xampp\php\php.exe tests\run.php 05     # เฉพาะไฟล์ที่ชื่อมี 05
+C:\xampp\php\php.exe scripts\e2e.php
 ```
 
-แนะนำ: ทดสอบทั้งหมดบน database ชั่วคราว `qim_fresh_test` (สร้าง, migrate, seed, tests, e2e, ลบ)
-
-```powershell
-C:\xampp\php\php.exe tests\clean_install.php
-```
-
-ล้าง `qim_dev` กลับเป็นข้อมูล seed (ลบทุกแถว): `scripts\reset-dev.php --confirm`
-
-ใช้ port 8111 ขึ้นไป และ 9377; รับเฉพาะ `qim_dev` และ `qim_fresh_test`; T20 ต้องมี Chrome หรือ Edge (ไม่มีจะรายงาน SKIPPED)
+ใช้ `qim_test` ที่สร้างและลบเองเท่านั้น (รวม clean install, migration ซ้ำ และ seed ซ้ำ) รายละเอียดใน README
 
 ## ค้างอยู่
 

@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 // Usage: php scripts/e2e.php
-// Development only. Runs one whole order over real HTTP against qim_dev:
+// Development only. Runs one whole order over real HTTP on the throw-away qim_test:
 // merchant sets up the menu, customer orders, accept, prepare, ready, pay, complete, history, report.
 
 require dirname(__DIR__) . '/tests/lib.php';
@@ -51,6 +51,5 @@ try {
 } catch (Throwable $e) {
     T::ok(false, 'exception: ' . $e->getMessage());
 }
-Fixture::closeShops();
 echo "\n== E2E " . T::$passed . ' passed, ' . count(T::$failed) . " failed\n";
-exit(T::$failed === [] ? 0 : 1);
+exit(TestDb::finish() && T::$failed === [] ? 0 : 1);

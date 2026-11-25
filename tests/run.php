@@ -2,8 +2,8 @@
 declare(strict_types=1);
 
 // Usage: php tests/run.php [filter]   e.g. php tests/run.php 05
-// Real HTTP against PHP built-in servers, on qim_dev or qim_fresh_test. Test rows stay in the database,
-// so prefer tests/clean_install.php, which uses a throw-away database.
+// Real HTTP against PHP built-in servers. Everything runs on qim_test, which is created from the migrations
+// and the seed, and dropped at the end.
 
 require __DIR__ . '/lib.php';
 
@@ -24,10 +24,6 @@ foreach (glob(__DIR__ . '/[0-9][0-9]_*.php') ?: [] as $file) {
         T::ok(false, 'exception in ' . basename($file) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
     }
 }
-if (class_exists('Fixture', false)) {
-    Fixture::closeShops();
-}
-
 echo "\n== " . T::$passed . ' passed, ' . count(T::$failed) . " failed\n";
 foreach (T::$failed as $label) {
     echo "FAILED $label\n";
@@ -40,4 +36,4 @@ foreach (T::$skipped as $id => $why) {
     echo "$id=SKIPPED($why) ";
 }
 echo "\n";
-exit(T::$failed === [] ? 0 : 1);
+exit(TestDb::finish() && T::$failed === [] ? 0 : 1);

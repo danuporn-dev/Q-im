@@ -4,12 +4,10 @@ declare(strict_types=1);
 use App\Support\Database;
 use App\Support\Env;
 
-/** Creates isolated shops, staff and customers in qim_dev. */
+/** Creates isolated shops, staff and customers in the test database. */
 final class Fixture
 {
     public static string $run = '';
-    /** @var list<int> */
-    public static array $shops = [];
 
     public static function run(): string
     {
@@ -22,7 +20,6 @@ final class Fixture
         $tag .= '_' . self::run() . '_' . bin2hex(random_bytes(2));
         $court = (int) Database::value('SELECT id FROM food_courts ORDER BY id LIMIT 1');
         $shopId = Database::insert('shops', $shop + ['food_court_id' => $court, 'name' => "TEST $tag", 'accepting_orders' => 1, 'capacity' => 2]);
-        self::$shops[] = $shopId;
         Database::insert('shop_settings', $settings + ['shop_id' => $shopId, 'avg_prep_minutes' => 5, 'max_active_orders' => 100]);
         $category = Database::insert('categories', ['shop_id' => $shopId, 'name' => 'ทั่วไป']);
         $menu = Database::insert('menus', ['shop_id' => $shopId, 'category_id' => $category, 'name' => "ข้าว $tag", 'price' => '45.00', 'prep_minutes' => 6]);
@@ -68,13 +65,5 @@ final class Fixture
         $cart = $c->put('/api/v1/cart', ['shop_id' => $shop['shop'], 'items' => [['menu_id' => $shop['menu'], 'quantity' => 1]], 'replace' => true]);
         $r = $c->post('/api/v1/orders', ['idempotency_key' => bin2hex(random_bytes(16)), 'quote' => $cart['body']['data']['quote'] ?? '']);
         return [$c, $r['body']['data']['id'] ?? throw new RuntimeException('order: ' . $r['raw'])];
-    }
-
-    /** Test shops must not show up for people using the development site. */
-    public static function closeShops(): void
-    {
-        foreach (self::$shops as $id) {
-            Database::update('shops', $id, ['active' => 0, 'accepting_orders' => 0]);
-        }
     }
 }

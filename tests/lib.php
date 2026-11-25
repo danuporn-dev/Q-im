@@ -3,15 +3,8 @@ declare(strict_types=1);
 
 // Test toolkit: real PHP servers on local ports, an HTTP client with its own cookies, assertions, fixtures.
 
-use App\Support\Database;
-use App\Support\Env;
-
-require dirname(__DIR__) . '/app/bootstrap.php';
-
-if (!Env::isDevelopment() || !in_array(Database::name(), ['qim_dev', 'qim_fresh_test'], true)) {
-    fwrite(STDERR, "Tests run only with APP_ENV=development on qim_dev or qim_fresh_test.\n");
-    exit(1);
-}
+require __DIR__ . '/testdb.php';
+TestDb::begin();
 
 final class T
 {

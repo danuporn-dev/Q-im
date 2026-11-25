@@ -41,12 +41,14 @@ Smart Food Court Platform: สั่งอาหารล่วงหน้า �
 ## ทดสอบ
 
 ```powershell
-C:\xampp\php\php.exe tests\clean_install.php          # แนะนำ: ทั้งหมดบน qim_fresh_test แล้วลบทิ้ง
-C:\xampp\php\php.exe tests\run.php                    # ทั้งหมดบน qim_dev (เหลือข้อมูลทดสอบ)
-C:\xampp\php\php.exe tests\run.php 05                 # เฉพาะบางไฟล์
-C:\xampp\php\php.exe scripts\e2e.php                  # หนึ่งออเดอร์ครบวงจรผ่าน HTTP
-C:\xampp\php\php.exe scripts\reset-dev.php --confirm  # ลบและสร้าง qim_dev ใหม่
+C:\xampp\php\php.exe tests\run.php       # เทสต์ทั้งหมด
+C:\xampp\php\php.exe tests\run.php 05    # เฉพาะไฟล์ที่ชื่อมี 05
+C:\xampp\php\php.exe scripts\e2e.php     # หนึ่งออเดอร์ครบวงจรผ่าน HTTP
 ```
+
+ทั้งสองคำสั่งสร้าง database `qim_test` เองจาก migrations + seed แล้วลบเมื่อจบ ไม่เขียนลง `qim_dev` (ตรวจ checksum ก่อนและหลัง ถ้าเปิดเว็บใช้งานระหว่างเทสต์จะรายงานว่าเปลี่ยน) ไม่ต้องตั้ง `DB_NAME` เอง รันพร้อมกันสองคำสั่งไม่ได้ ต้องมี MariaDB ที่รันอยู่ในเครื่อง, `APP_ENV=development`, port 8111–8212 และ 9377 ว่าง และ Chrome หรือ Edge สำหรับ T20 (ไม่มีจะรายงาน SKIPPED)
+
+ล้าง `qim_dev` กลับเป็นข้อมูล seed (**ลบทุกแถว**): `C:\xampp\php\php.exe scripts\reset-dev.php --confirm`
 
 แจ้งเตือน LINE: `php scripts/notify.php [--watch]`
 

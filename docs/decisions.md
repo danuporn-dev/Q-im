@@ -22,7 +22,7 @@
 | D16 | ยอดขายในรายงาน | ผลรวม `payments.status = PAID` ตาม `paid_at` ของช่วงวันที่เวลาไทย |
 | D17 | การแจ้งเตือน | แจ้งเมื่อรับ ปฏิเสธ พร้อมรับ และร้านยกเลิก; ลองสูงสุด 5 ครั้ง; งานเก่ากว่า 24 ชั่วโมงไม่ส่ง |
 | D18 | ยอมรับข้อเสนอหัวข้อ 17 ของ CLAUDE.md | ใช้ตามที่เสนอทั้งหมด |
-| D19 | การทดสอบ **(กำหนดแล้ว)** | ใช้ `qim_fresh_test` ผ่าน `tests/clean_install.php` (สร้างและลบเอง) หรือ `qim_dev`; ปฏิเสธชื่ออื่น |
+| D19 | การทดสอบ **(กำหนดแล้ว)** | `tests/run.php` และ `scripts/e2e.php` ใช้ `qim_test` เท่านั้น สร้างจาก migrations + seed และลบเอง ไม่เขียน `qim_dev` |
 | D20 | Migration | เขียนให้ใช้ได้ทั้ง MariaDB 10.4+ และ MySQL 8.0.16+ แต่ทดสอบจริงเฉพาะ MariaDB |
 | D21 | เปลี่ยนร้านในตะกร้า | API ตอบ 409 `CART_SHOP_CONFLICT` จนกว่า client ส่ง `replace: true` หลังผู้ใช้ยืนยัน |
 | D22 | Git | commit ต่อ phase ที่ branch `feature/mvp` ไม่ push |

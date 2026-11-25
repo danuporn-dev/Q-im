@@ -138,6 +138,9 @@ button.item:hover:not(:disabled), a.item:hover { border-color: #9cc3ac; }
 .ocard { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: .8rem; }
 .ocard.late { border: 2px solid #d18a00; }
 .ocard ul { margin: .4rem 0; padding-left: 1.1rem; }
+.ocard > .row { margin-top: .5rem; }
+.ocard .btn { padding: .5rem .8rem; flex: 1; }
+.board { margin-top: .9rem; }
 .ocard .q { font-size: 1.35rem; font-weight: 800; }
 .grid { display: grid; gap: .9rem; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 .stats { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 1rem; }
@@ -152,7 +155,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .filters > * { flex: 0 1 200px; margin: 0; }
 .filters > .btn { flex: none; }
 @media (max-width: 860px) {
-  .desk { grid-template-columns: 1fr; }
+  .desk { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: .5rem .8rem; }
   .side .brand { margin: 0 .5rem 0 0; }
   .side a { padding: .6rem .7rem; }

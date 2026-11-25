@@ -50,6 +50,9 @@ return static function (Router $r): void {
     // Merchant: orders
     $r->add('GET', '/merchant/shops/{id}/orders', [MerchantController::class, 'orders']);
     $r->add('GET', '/merchant/orders/{id}', [MerchantController::class, 'order']);
+    $r->add('POST', '/merchant/orders/{id}/payment', [MerchantController::class, 'payment']);
+    $r->add('POST', '/merchant/orders/{id}/complete', [MerchantController::class, 'complete']);
+    $r->add('GET', '/merchant/shops/{id}/reports', [MerchantController::class, 'reports']);
     foreach (['accept', 'reject', 'prepare', 'ready', 'cancel'] as $action) {
         $r->add('POST', "/merchant/orders/{id}/$action", MerchantController::transition($action));
     }

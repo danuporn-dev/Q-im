@@ -8,6 +8,7 @@ use App\Services\Catalog;
 use App\Services\Images;
 use App\Services\OrderFlow;
 use App\Services\Orders;
+use App\Services\Reports;
 use App\Services\ShopAdmin;
 use App\Support\RateLimiter;
 use App\Support\Request;
@@ -39,6 +40,26 @@ final class MerchantController
             OrderFlow::byMerchant($user['id'], $orderId, $action, $q->json());
             return [Orders::shopOrder($orderId), 200];
         };
+    }
+
+    public static function payment(Request $q, int $orderId): array
+    {
+        $user = Auth::user($q, 'merchant');
+        OrderFlow::confirmPayment($user['id'], $orderId);
+        return [Orders::shopOrder($orderId), 200];
+    }
+
+    public static function complete(Request $q, int $orderId): array
+    {
+        $user = Auth::user($q, 'merchant');
+        OrderFlow::complete($user['id'], $orderId, $q->json());
+        return [Orders::shopOrder($orderId), 200];
+    }
+
+    public static function reports(Request $q, int $shopId): array
+    {
+        self::member($q, $shopId);
+        return [Reports::summary($q->query('from'), $q->query('to'), $shopId), 200];
     }
 
     public static function settings(Request $q, int $shopId): array

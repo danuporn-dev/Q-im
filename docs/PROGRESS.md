@@ -11,7 +11,7 @@
 | 4 customer UI, cart, checkout | เสร็จ |
 | 5 accept/reject, queue, tracking | เสร็จ |
 | 6 prepare/ready/pickup/payment, e2e | เสร็จ |
-| 7 LINE | รอทำ |
+| 7 LINE | เสร็จ (LINE จำลอง; ยังไม่ทดสอบ LINE จริง) |
 | 8 admin, reports, audit | รอทำ |
 | 9 security, concurrency, responsive, docs | รอทำ |
 

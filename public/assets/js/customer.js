@@ -28,11 +28,17 @@ async function boot() {
     await loadMe();
     if (config.liff_id) {
       // Loaded only when LINE is configured; the site still works without it.
-      const { initLiff } = await import('./liff.js');
-      const token = await initLiff(config.liff_id, Boolean(me));
-      if (token && !me) {
-        await post('/auth/line', { id_token: token });
-        await loadMe();
+      const liff = await import('./liff.js');
+      const token = await liff.initLiff(config.liff_id);
+      if (token) {
+        // Always confirm who is using LINE now; an older session may belong to someone else.
+        try {
+          await post('/auth/line', { id_token: token });
+          await loadMe();
+        } catch (e) {
+          if (!me && e.code === 'INVALID_IDENTITY') liff.renew();
+          else if (!me) throw e;
+        }
       }
     }
   } catch (e) {

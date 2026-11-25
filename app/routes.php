@@ -4,6 +4,7 @@ declare(strict_types=1);
 use App\Controllers\AuthController;
 use App\Controllers\CatalogController;
 use App\Controllers\CustomerController;
+use App\Controllers\LineController;
 use App\Controllers\MerchantController;
 use App\Support\Database;
 use App\Support\Request;
@@ -17,6 +18,8 @@ return static function (Router $r): void {
 
     // Identity
     $r->add('GET', '/config', [AuthController::class, 'config']);
+    $r->add('POST', '/auth/line', [LineController::class, 'login']);
+    $r->add('POST', '/line/webhook', [LineController::class, 'webhook']);
     $r->add('POST', '/auth/dev', [AuthController::class, 'dev']);
     $r->add('POST', '/auth/login', [AuthController::class, 'login']);
     $r->add('POST', '/auth/logout', [AuthController::class, 'logout']);

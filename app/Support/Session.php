@@ -75,7 +75,7 @@ final class Session
     {
         return [
             'path' => '/',
-            'secure' => Env::isProduction() || ($_SERVER['HTTPS'] ?? 'off') !== 'off',
+            'secure' => Env::isProduction() || Proxy::https(),
             'httponly' => true,
             'samesite' => 'Lax',
         ];

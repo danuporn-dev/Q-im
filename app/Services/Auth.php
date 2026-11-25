@@ -7,6 +7,7 @@ use App\Identity\Identity;
 use App\Support\Clock;
 use App\Support\Database;
 use App\Support\HttpError;
+use App\Support\Proxy;
 use App\Support\Request;
 use App\Support\Session;
 
@@ -54,8 +55,9 @@ final class Auth
         if ($origin !== '') {
             $parts = parse_url($origin);
             $host = ($parts['host'] ?? '') . (isset($parts['port']) ? ':' . $parts['port'] : '');
-            $own = preg_replace('/:(80|443)$/', '', (string) ($_SERVER['HTTP_HOST'] ?? ''));
-            if (strcasecmp($host, $own) !== 0) {
+            $host = preg_replace('/:(80|443)$/', '', $host);
+            $scheme = Proxy::scheme();
+            if (strcasecmp($host, Proxy::host()) !== 0 || ($scheme !== null && ($parts['scheme'] ?? '') !== $scheme)) {
                 throw new HttpError(403, 'CROSS_ORIGIN', 'ไม่อนุญาตคำขอจากเว็บไซต์อื่น');
             }
         }

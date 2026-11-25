@@ -67,9 +67,17 @@ final class Request
         return [$page, $perPage, ($page - 1) * $perPage];
     }
 
+    /** For rate limits. One IPv6 client owns a whole /64, so the rest of the address is dropped. */
     public function ip(): string
     {
-        return (string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+        $ip = Proxy::clientIp();
+        $packed = @inet_pton($ip);
+        if ($packed === false || strlen($packed) !== 16) {
+            return $ip;
+        }
+        return str_starts_with($packed, str_repeat("\0", 10) . "\xff\xff")
+            ? (string) inet_ntop(substr($packed, 12))
+            : inet_ntop(substr($packed, 0, 8) . str_repeat("\0", 8)) . '/64';
     }
 
     public function isMutation(): bool

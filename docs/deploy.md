@@ -5,7 +5,7 @@
 1. **Backup** database ก่อนทุกครั้ง: `mysqldump --single-transaction <db> > backup.sql` เก็บนอก web root และทดสอบ restore
 2. PHP รุ่นที่ยังได้รับ security updates พร้อม `pdo_mysql`, `curl`, `gd`, `fileinfo`, `mbstring`; MariaDB 10.4+ หรือ MySQL 8.0.16+ (ดู [ฐานข้อมูล](#ฐานข้อมูล-mariadb-และ-mysql))
 3. Document root = `public/` เท่านั้น, HTTPS บังคับ, เปิด `mod_rewrite` และ `AllowOverride All` (Nginx: ส่ง `/api/v1/` ไป `public/api/index.php`)
-4. ตั้ง HSTS ที่ web server; ถ้าอยู่หลัง reverse proxy ต้องส่ง `Host` เดิม และระบบใช้ `REMOTE_ADDR` สำหรับ rate limit จึงควรให้ web server แปลง IP จริงจาก proxy ที่เชื่อถือ
+4. ตั้ง HSTS ที่ web server; ถ้าอยู่หลัง reverse proxy ให้ใส่ IP ของ proxy ใน `TRUSTED_PROXY` (คั่นด้วย `,`) ระบบจึงเชื่อ `X-Forwarded-For/Host/Proto`; ไม่ตั้ง = ไม่เชื่อ header เหล่านี้ และใช้ `REMOTE_ADDR` กับ `Host`
 5. สร้าง DB user ที่มีสิทธิ์เฉพาะ database นี้ ห้ามใช้ `root`
 6. ตั้งค่า environment ตาม `.env.example` โดย `APP_ENV=production` ค่าอื่นที่ไม่ใช่ `development` ถือเป็น production เสมอ: ปิด mock login และ test hooks, cookie เป็น `Secure` (จึง login ผ่าน HTTP ธรรมดาไม่ได้)
 7. ให้ PHP เขียนได้เฉพาะ `storage/logs`, `storage/sessions`, `storage/uploads`
@@ -43,6 +43,8 @@
 `008_runtime.sql` ถูกแก้หลังเคยรันใน `qim_dev` (checksum เปลี่ยน) database ที่ติดตั้ง `008` รุ่นเก่าไว้จะถูก `migrate.php` ปฏิเสธ ขณะนี้มีเพียงเครื่องพัฒนาซึ่ง reset แล้ว
 
 ## Rate limit
+
+IPv6 นับเป็นช่วง `/64`
 
 | รายการ | นับตาม | เพดาน |
 |---|---|---|

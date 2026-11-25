@@ -31,3 +31,4 @@
 | D25 | ชื่อลูกค้า | API ฝั่งร้านไม่ส่งชื่อลูกค้า ตามที่แจ้งใน privacy notice |
 | D26 | READY no-show **(กำหนดแล้ว)** | ร้านยกเลิก `READY` ที่ `UNPAID` ได้เมื่อพร้อมรับครบ `READY_ALERT_MINUTES` (ค่าเริ่มต้น 20 ใช้ร่วมกับตัวเตือน ตั้งระดับระบบใน `.env` เพื่อไม่ให้ร้านลดเวลาเอง ค่าที่ไม่ถูกต้องใช้ 20) ต้องมีเหตุผล; audit `order.no_show`; ไม่ auto-cancel |
 | D27 | ส่งมอบโดยไม่ใช้รหัส **(กำหนดแล้ว)** | ร้านทำเองพร้อมเหตุผล ไม่ต้องให้ admin อนุมัติ; audit `pickup.override` filter ได้ที่ `GET /admin/audit-logs?action=pickup.override`; หน้า admin แสดงจำนวนสะสมต่อร้านแบบอ่านอย่างเดียว |
+| D28 | การสาธิต **(กำหนดแล้ว)** | `demo-reset.php` = reset `qim_dev` + `seed-demo.php` (แทน `seed.php`); ป้าย, login แตะเดียว, แชทจำลอง และ placeholder SVG ใช้ได้เฉพาะ `APP_ENV=development`; `POLL_SECONDS` (2–60) ใช้ได้ทุก environment ว่าง = ค่าเดิม 6–10 วินาที |

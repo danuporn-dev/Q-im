@@ -50,6 +50,8 @@ C:\xampp\php\php.exe scripts\e2e.php     # หนึ่งออเดอร์�
 
 ล้าง `qim_dev` กลับเป็นข้อมูล seed (**ลบทุกแถว**): `C:\xampp\php\php.exe scripts\reset-dev.php --confirm`
 
+สาธิตสด: `C:\xampp\php\php.exe scripts\demo-reset.php --confirm` (**ลบทุกแถว**ของ `qim_dev` แล้วใส่ข้อมูลสาธิต ห้ามรัน `seed.php` ต่อ) ดู [run sheet](docs/demo.md)
+
 แจ้งเตือน LINE: `php scripts/notify.php [--watch]`
 
 ## Document root ต้องเป็น `public/`

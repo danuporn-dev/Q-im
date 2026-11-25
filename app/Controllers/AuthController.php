@@ -33,8 +33,9 @@ final class AuthController
     public static function customer(Request $q, IdentityProvider $provider, string $field): array
     {
         Auth::checkJson($q);
-        // Generous: a whole campus can share one address.
-        RateLimiter::hit('auth-customer', $q->ip(), 300, 60);
+        // A whole campus can share one address, so a signed-in customer is counted alone.
+        $known = Auth::sessionUserId('customer');
+        $known === null ? RateLimiter::hit('auth-ip', $q->ip(), 600, 60) : RateLimiter::hit('auth-user', (string) $known, 30, 60);
         $credential = Input::text($q->json(), $field, 'ข้อมูลยืนยันตัวตน', 4096);
         $session = Auth::loginCustomer($provider->verify($credential));
         return [['csrf' => $session['csrf']], 200];
@@ -53,9 +54,13 @@ final class AuthController
         if (!is_string($password) || $password === '' || strlen($password) > 200) {
             throw HttpError::invalid('กรุณากรอกรหัสผ่าน');
         }
-        RateLimiter::hit('login-ip', $q->ip(), 100, 900);
-        RateLimiter::hit('login', $q->ip() . '|' . $realm . '|' . mb_strtolower($login), 10, 900);
+        // Account + address, so one person's mistakes never block colleagues on the same network.
+        // The wide per-address limit only stops one address from trying many accounts.
+        $subject = $q->ip() . '|' . $realm . '|' . mb_strtolower($login);
+        RateLimiter::hit('login-spray', $q->ip(), 300, 900);
+        RateLimiter::hit('login', $subject, 10, 900);
         $session = Auth::loginStaff($realm, $login, $password);
+        RateLimiter::clear('login', $subject);
         return [['csrf' => $session['csrf']], 200];
     }
 

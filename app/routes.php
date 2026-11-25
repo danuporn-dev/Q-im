@@ -22,6 +22,7 @@ return static function (Router $r): void {
     $r->add('POST', '/auth/line', [LineController::class, 'login']);
     $r->add('POST', '/line/webhook', [LineController::class, 'webhook']);
     $r->add('POST', '/auth/dev', [AuthController::class, 'dev']);
+    $r->add('GET', '/dev/messages', [AuthController::class, 'devMessages']);
     $r->add('POST', '/auth/login', [AuthController::class, 'login']);
     $r->add('POST', '/auth/logout', [AuthController::class, 'logout']);
     $r->add('GET', '/me', [AuthController::class, 'me']);

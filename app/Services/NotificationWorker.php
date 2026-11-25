@@ -15,6 +15,12 @@ final class NotificationWorker
     private const BACKOFF = [60, 300, 900, 3600];
     private const LEASE = 300;
     private const MAX_AGE = 86400;
+    public const SELECT =
+        'SELECT n.id, n.event_type, n.dedupe_key, n.attempts, n.created_at, o.id AS order_id, o.status AS order_status, o.public_order_no, s.name AS shop_name,
+                    q.queue_number, u.line_user_id, u.line_friend, u.active,
+                    (SELECT l.reason FROM order_status_logs l WHERE l.order_id = o.id AND l.reason IS NOT NULL ORDER BY l.id DESC LIMIT 1) AS reason
+             FROM notifications n JOIN orders o ON o.id = n.order_id JOIN shops s ON s.id = o.shop_id
+             JOIN users u ON u.id = n.user_id LEFT JOIN queues q ON q.order_id = o.id';
 
     /** @return array{sent: int, retry: int, failed: int} */
     public static function run(int $limit = 50): array
@@ -41,11 +47,7 @@ final class NotificationWorker
     private static function send(int $id): string
     {
         $n = Database::row(
-            'SELECT n.id, n.event_type, n.dedupe_key, n.attempts, n.created_at, o.id AS order_id, o.status AS order_status, o.public_order_no, s.name AS shop_name,
-                    q.queue_number, u.line_user_id, u.line_friend, u.active,
-                    (SELECT l.reason FROM order_status_logs l WHERE l.order_id = o.id AND l.reason IS NOT NULL ORDER BY l.id DESC LIMIT 1) AS reason
-             FROM notifications n JOIN orders o ON o.id = n.order_id JOIN shops s ON s.id = o.shop_id
-             JOIN users u ON u.id = n.user_id LEFT JOIN queues q ON q.order_id = o.id WHERE n.id = ?',
+            self::SELECT . ' WHERE n.id = ?',
             [$id]
         );
         $skip = match (true) {
@@ -90,7 +92,8 @@ final class NotificationWorker
         return 'failed';
     }
 
-    private static function text(array $n): string
+    /** The wording without the link. */
+    public static function message(array $n): string
     {
         $queue = $n['queue_number'] === null ? '' : sprintf('Q-%03d', $n['queue_number']);
         $reason = $n['reason'] ? "\nเหตุผล: " . $n['reason'] : '';
@@ -100,9 +103,14 @@ final class NotificationWorker
             'ORDER_REJECTED' => "{$n['shop_name']} ไม่สามารถรับออเดอร์ได้$reason",
             default => "{$n['shop_name']} ยกเลิกออเดอร์ของคุณ$reason",
         };
+        return "$text\nออเดอร์ {$n['public_order_no']}";
+    }
+
+    private static function text(array $n): string
+    {
         $liff = Env::get('LIFF_ID');
         $base = $liff !== '' ? "https://liff.line.me/$liff" : rtrim(Env::get('APP_URL'), '/') . '/customer/';
-        return "$text\nออเดอร์ {$n['public_order_no']}\n$base#/order/{$n['order_id']}";
+        return self::message($n) . "\n$base#/order/{$n['order_id']}";
     }
 
     /** The same notification always uses the same UUID, so LINE drops duplicates. */

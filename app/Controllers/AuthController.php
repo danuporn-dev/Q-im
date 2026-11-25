@@ -6,6 +6,7 @@ namespace App\Controllers;
 use App\Identity\DevMockIdentity;
 use App\Identity\IdentityProvider;
 use App\Services\Auth;
+use App\Services\DemoMessages;
 use App\Support\Database;
 use App\Support\Env;
 use App\Support\HttpError;
@@ -40,6 +41,15 @@ final class AuthController
             throw HttpError::notFound('ไม่พบเส้นทางที่ร้องขอ');
         }
         return self::customer($q, new DevMockIdentity(), 'customer');
+    }
+
+    /** Simulated LINE chat of the signed-in customer. This route does not exist outside development either. */
+    public static function devMessages(Request $q): array
+    {
+        if (!Env::isDevelopment()) {
+            throw HttpError::notFound('ไม่พบเส้นทางที่ร้องขอ');
+        }
+        return [DemoMessages::ofCustomer(Auth::user($q, 'customer')['id']), 200];
     }
 
     public static function customer(Request $q, IdentityProvider $provider, string $field): array

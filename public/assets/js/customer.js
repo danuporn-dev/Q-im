@@ -71,7 +71,7 @@ const demoLogin = (done) => h('section.card.stack', {}, h('p.notice', {}, 'โ�
     await loadMe();
     await done();
   }) }, `${name} (ลูกค้าสาธิต)`)));
-const demoBar = () => (config.dev_login ? h('aside.demobar', { 'aria-label': 'โหมดสาธิต' }, h('strong', {}, 'โหมดสาธิต'), h('span', {}, me ? me.display_name : 'ไม่ใช่ LINE จริง')) : '');
+const demoBar = () => (config.dev_login ? h('aside.demobar', { 'aria-label': 'โหมดสาธิต' }, h('strong', {}, 'โหมดสาธิต'), h('span', {}, me ? me.display_name : 'ไม่ใช่ LINE จริง'), me ? h('a', { href: '#/messages' }, 'จำลองข้อความ LINE') : null) : '');
 
 // ---- Layout -----------------------------------------------------------------
 
@@ -113,7 +113,7 @@ async function route() {
   stop = () => {};
   const mine = ++turn;
   const [, page = '', id] = (location.hash || '#/').split('?')[0].split('/');
-  const routes = { '': home, search, shop, cart: cartPage, orders, order, profile, help };
+  const routes = { '': home, search, shop, cart: cartPage, orders, order, profile, help, ...(config.dev_login ? { messages } : {}) };
   const show = routes[page] || home;
   const alive = () => mine === turn;
   const load = async () => {
@@ -423,6 +423,24 @@ async function profile() {
 
 async function help() {
   frame('profile', [header('วิธีใช้งาน', '#/profile'), h('section.card', {}, h('ol', {}, ['เลือกร้านและเมนู แล้วเพิ่มลงตะกร้า', 'ยืนยันออเดอร์ ยังไม่ต้องจ่ายเงิน', 'ร้านรับออเดอร์ ระบบออกหมายเลขคิวให้อัตโนมัติ', 'เมื่อสถานะเป็นพร้อมรับ เดินไปที่ร้าน', 'แจ้งรหัสรับอาหาร ชำระเงิน แล้วรับอาหาร'].map((t) => h('li', {}, t))), h('p.muted', {}, 'เวลารอเป็นค่าประมาณ ต้องการแก้ไขหรือยกเลิกหลังร้านรับออเดอร์ กรุณาติดต่อร้านโดยตรง'))]);
+}
+
+/** Demo only: the outbox of this customer as a chat. Nothing is sent to LINE. */
+async function messages(alive) {
+  if (!me) return needLogin('orders');
+  const box = h('div.chat', { 'aria-live': 'polite' });
+  const changed = changes();
+  const draw = async () => {
+    const list = await get('/dev/messages');
+    if (!changed(list)) return;
+    box.replaceChildren(...(list.length ? list.map((m) => h('article.bubble', {}, h('p', {}, m.text), h('a', { href: `#/order/${m.order_id}` }, 'ดูออเดอร์'), h('div.muted', {}, time(m.created_at), ' · จำลอง ยังไม่ได้ส่ง'))) : [empty('ยังไม่มีข้อความ ระบบจะเตรียมข้อความเมื่อร้านรับออเดอร์และเมื่ออาหารพร้อม')]));
+    if (alive()) scrollTo(0, document.body.scrollHeight);
+  };
+  await draw();
+  if (!alive()) return undefined;
+  frame('orders', [header('จำลองข้อความ LINE', '#/orders'), h('p.notice', {}, 'ภาพจำลองเพื่อการสาธิต ไม่ได้ส่งผ่าน LINE จริง แสดงข้อความที่ระบบเตรียมไว้ให้ลูกค้าเมื่อเชื่อมต่อ LINE แล้ว'), box], true);
+  stop = poll(draw, 6000);
+  return undefined;
 }
 
 boot();

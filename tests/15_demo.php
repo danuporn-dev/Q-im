@@ -89,7 +89,24 @@ foreach ($demo as $i => $id) {
     }
     $statuses[] = $m->post("$a/merchant/orders/$o/complete", ['pickup_code' => $v['pickup_code']])['status'];
     T::eq([200, 200, 200, 200, 200], $statuses, 'accept, prepare, ready, payment, complete');
+    $messages = $c->get("$a/dev/messages")['body']['data'];
+    $texts = array_column(array_values(array_filter($messages, static fn (array $x): bool => $x['order_id'] === (int) $o)), 'text');
+    T::ok(count($texts) === 2 && str_contains($texts[0], 'รับออเดอร์แล้ว') && str_contains($texts[1], 'อาหารพร้อมรับแล้ว') && str_contains($texts[1], $v['order_no']), 'simulated messages of the order', $texts);
+    $mine = array_column(Database::rows('SELECT o.id FROM orders o JOIN users u ON u.id = o.user_id WHERE u.line_user_id = ?', ['DEMO_CUSTOMER_' . ($i + 1)]), 'id');
+    T::eq([], array_values(array_diff(array_column($messages, 'order_id'), $mine)), 'no messages of other customers');
     T::eq('COMPLETED', $c->get("$a/orders/$o")['body']['data']['status'], 'completed');
+}
+$rows = static fn (): array => Database::rows('SELECT * FROM notifications ORDER BY id');
+$before = $rows();
+$c->get("$a/dev/messages");
+T::eq($before, $rows(), 'reading the messages changes and sends nothing');
+T::status(401, $anon->get("$a/dev/messages"), 'messages need a customer session');
+T::status(401, $m->get("$a/dev/messages"), 'a merchant session is not enough');
+T::status(405, $c->post("$a/dev/messages"), 'messages are read only');
+foreach ([8270, 8271, 8272] as $port) {
+    $other = new Client("http://127.0.0.1:$port");
+    $other->cookies = $c->cookies;
+    T::status(404, $other->get("$a/dev/messages"), "port $port is not development: refused even with a session");
 }
 $shopEdit = $anon->get("$a/shops/{$demo[2]}/menus")['body']['data']['menus'][0];
 T::status(200, $m->patch("$a/merchant/menus/{$shopEdit['id']}", ['image_url' => $shopEdit['image_url'], 'price' => '31']), 'a demo menu can be edited during the presentation');
@@ -113,7 +130,10 @@ try {
     T::ok($b->until("document.querySelector('.demobar').innerText.includes('ต้นกล้า')"), 'one tap on the home page signs in, banner shown');
     $b->open('http://127.0.0.1:8270/customer/');
     T::ok($b->sees('เดินไปรับเมื่ออาหารเสร็จ') && !$b->sees('สาธิต', 1), 'production page has no banner and no demo button');
-    $b->open("$fast/customer/");
+    $b->open('http://127.0.0.1:8270/customer/#/messages');
+    T::ok($b->sees('เดินไปรับเมื่ออาหารเสร็จ') && !$b->sees('จำลอง', 1), 'production page has no simulated chat');
+    $b->open("$fast/customer/#/messages");
+    T::ok($b->sees('ไม่ได้ส่งผ่าน LINE จริง') && $b->sees('อาหารพร้อมรับแล้ว') && $b->sees('ยังไม่ได้ส่ง'), 'chat is labelled as a simulation');
     $b->sees('หน้าหลัก');
     $b->js("fetch('/api/v1/auth/dev',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer:'TEST_POLL'})}).then(r=>r.ok)");
     $c = new Client($base);

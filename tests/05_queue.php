@@ -78,7 +78,7 @@ Database::run("UPDATE orders SET status = 'PREPARING', preparing_at = ? WHERE id
 T::eq(1, $c->get("$a/orders/$o")['body']['data']['eta_minutes'], 'overdue ETA is never negative');
 Database::run("UPDATE orders SET status = 'ACCEPTED', preparing_at = NULL WHERE id = ?", [$o]);
 
-T::group('T07 concurrent accepts');
+T::group('T07 concurrent accepts: 24 orders, 48 requests (2 per order) on 8 server processes');
 $ports = [];
 for ($i = 0; $i < 8; $i++) {
     $ports[] = Servers::start(8131 + $i, ['RATE_LIMIT_MULTIPLIER' => '1000']);
@@ -95,9 +95,13 @@ foreach ($ids as $i => $id) {
     $requests[] = [$mm, 'POST', "$a/merchant/orders/$id/accept", [], $ports[($i + 3) % 8]];
 }
 $responses = parallel($requests);
-T::eq([200], array_values(array_unique(array_column($responses, 'status'))), '48 parallel accepts all succeed', array_count_values(array_column($responses, 'status')));
+T::eq([200], array_values(array_unique(array_column($responses, 'status'))), 'all 48 requests answer 200');
+T::eq(48, count($responses), '48 requests were sent');
 $numbers = array_map('intval', array_column(Database::rows('SELECT queue_number FROM queues WHERE shop_id = ? ORDER BY queue_number', [$fresh['shop']]), 'queue_number'));
-T::eq(range(1, 24), $numbers, 'numbers are exactly 1..24');
+T::eq(24, count(array_unique($numbers)), '24 orders have 24 different numbers');
+T::eq(range(1, 24), $numbers, 'numbers are continuous from 1 to 24');
+T::eq([24, 24], [(int) Database::value('SELECT last_number FROM queue_counters WHERE shop_id = ?', [$fresh['shop']]), (int) Database::value('SELECT COUNT(DISTINCT order_id) FROM queues WHERE shop_id = ?', [$fresh['shop']])], 'counter is 24 and each order has one queue');
+T::eq(24, (int) Database::value("SELECT COUNT(*) FROM order_status_logs l JOIN orders o ON o.id = l.order_id WHERE o.shop_id = ? AND l.to_status = 'ACCEPTED'", [$fresh['shop']]), 'one ACCEPTED log each');
 T::eq(24, (int) Database::value("SELECT COUNT(*) FROM notifications n JOIN orders o ON o.id = n.order_id WHERE o.shop_id = ? AND n.event_type = 'ORDER_ACCEPTED'", [$fresh['shop']]), 'one notification each');
 [, $race] = Fixture::order($base, 'race', $fresh);
 $responses = parallel([[$mm, 'POST', "$a/merchant/orders/$race/accept", [], $ports[0]], [$mm, 'POST', "$a/merchant/orders/$race/reject", ['reason' => 'x'], $ports[1]]]);

@@ -46,9 +46,11 @@ final class Orders
             throw HttpError::conflict('CART_EMPTY', 'ตะกร้าว่าง');
         }
         $shopId = (int) $cart['shop_id'];
+        // Lock only the shop row: locking the joined food court would serialize every shop in it.
+        Database::row('SELECT id FROM shops WHERE id = ? FOR UPDATE', [$shopId]);
         $shop = Database::row(
             'SELECT s.accepting_orders, s.active, f.active AS court_active, t.max_active_orders FROM shops s
-             JOIN food_courts f ON f.id = s.food_court_id LEFT JOIN shop_settings t ON t.shop_id = s.id WHERE s.id = ? FOR UPDATE',
+             JOIN food_courts f ON f.id = s.food_court_id LEFT JOIN shop_settings t ON t.shop_id = s.id WHERE s.id = ?',
             [$shopId]
         );
         if (!$shop['active'] || !$shop['court_active'] || !$shop['accepting_orders'] || !Catalog::withinHours(Catalog::hours([$shopId])[$shopId] ?? [])) {

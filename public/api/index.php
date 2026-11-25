@@ -10,6 +10,7 @@ use App\Support\Router;
 require dirname(__DIR__, 2) . '/app/bootstrap.php';
 
 ini_set('display_errors', '0');
+header_remove('X-Powered-By');
 
 try {
     $request = Request::capture();

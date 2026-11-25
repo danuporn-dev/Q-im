@@ -57,7 +57,7 @@ final class Request
     public function query(string $key, string $default = ''): string
     {
         $value = $_GET[$key] ?? $default;
-        return is_string($value) ? trim($value) : $default;
+        return is_string($value) && mb_check_encoding($value, 'UTF-8') ? trim($value) : $default;
     }
 
     /** @return array{0: int, 1: int, 2: int} page, per page, offset */

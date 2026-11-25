@@ -11,7 +11,7 @@ final class Router
     /** {id} matches a positive integer, {key} a hex string. */
     public function add(string $method, string $pattern, callable $handler): void
     {
-        $regex = strtr($pattern, ['{id}' => '([1-9][0-9]{0,18})', '{sub}' => '([1-9][0-9]{0,18})', '{key}' => '([0-9a-f]{32})']);
+        $regex = strtr($pattern, ['{id}' => '([1-9][0-9]{0,17})', '{sub}' => '([1-9][0-9]{0,17})', '{key}' => '([0-9a-f]{32})']);
         $this->routes[] = [$method, "#^$regex$#D", $handler];
     }
 

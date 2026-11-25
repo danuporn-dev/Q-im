@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 use App\Controllers\AuthController;
+use App\Controllers\AdminController;
 use App\Controllers\CatalogController;
 use App\Controllers\CustomerController;
 use App\Controllers\LineController;
@@ -59,4 +60,6 @@ return static function (Router $r): void {
     foreach (['accept', 'reject', 'prepare', 'ready', 'cancel'] as $action) {
         $r->add('POST', "/merchant/orders/{id}/$action", MerchantController::transition($action));
     }
+
+    AdminController::routes($r);
 };

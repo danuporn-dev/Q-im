@@ -16,8 +16,11 @@ final class Response
 
     public static function error(HttpError $e): void
     {
-        $error = ['code' => $e->errorCode, 'message' => $e->getMessage()];
-        if ($e->details !== []) {
+        $public = Env::isDemoPublic();
+        $error = $public && $e->status >= 500
+            ? ['code' => 'SERVER_ERROR', 'message' => 'ระบบขัดข้อง กรุณาลองใหม่อีกครั้ง']
+            : ['code' => $e->errorCode, 'message' => $e->getMessage()];
+        if ($e->details !== [] && !$public) {
             $error['details'] = $e->details;
         }
         self::json(['error' => $error], $e->status);

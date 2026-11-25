@@ -31,7 +31,7 @@ T::ok($secure($login($trusted, ['X-Forwarded-Proto: http, https'])) && !$secure(
 T::ok(!$secure($login($trusted, [])), 'plain local request keeps working without Secure');
 
 T::group('Untrusted proxy headers are ignored');
-foreach (['' => 8282, '10.0.0.9' => 8283, 'nonsense,*,0.0.0.0/0' => 8284] as $list => $port) {
+foreach (['none' => 8282, '10.0.0.9' => 8283, 'nonsense,*,0.0.0.0/0' => 8284] as $list => $port) {
     $other = Servers::start($port, ['TRUSTED_PROXY' => (string) $list]);
     T::ok(!$secure($login($other, $ngrok)), "TRUSTED_PROXY=\"$list\": scheme ignored");
     T::status(403, $login($other, [...$ngrok, 'Origin: https://demo.ngrok.example']), "\"$list\": host ignored", 'CROSS_ORIGIN');
@@ -44,7 +44,7 @@ $ip = static function (string $remote, array $server, string $list): string {
     $_SERVER = ['REMOTE_ADDR' => $remote] + $server + $_SERVER;
     $result = App\Support\Request::capture()->ip();
     $_SERVER = $old;
-    putenv('TRUSTED_PROXY');
+    putenv('TRUSTED_PROXY=none');
     return $result;
 };
 $for = static fn (string $v): array => ['HTTP_X_FORWARDED_FOR' => $v];
@@ -124,6 +124,54 @@ if ($binary === null) {
         $b->close();
     }
 }
+
+T::group('DEMO_PUBLIC hides details');
+$ini = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'qim_ini_' . bin2hex(random_bytes(4));
+mkdir($ini);
+// Breaks the router of one server on purpose: it runs out of memory, or throws with a path in the message.
+file_put_contents("$ini/break.php", "<?php namespace App\\Support; if (str_starts_with(\$_SERVER['REQUEST_URI'] ?? '', '/api/')) { final class Router { public function add() {} public function dispatch() { if (isset(\$_GET['throw'])) { throw new \\RuntimeException('secret detail C:/private/path.php'); } ini_set('memory_limit', '8M'); return [str_repeat('x', 1 << 28), 200]; } } }");
+file_put_contents("$ini/z.ini", "display_errors=On\nhtml_errors=Off\nauto_prepend_file=\"" . strtr("$ini/break.php", '\\', '/') . "\"\n");
+$internal = '#secret detail|Stack trace|SQLSTATE|PDOException|RuntimeException|Allowed memory|[A-Z]:[/\\\\]|\.php|htdocs|X-Powered-By|127\.0\.0\.1:1\b#i';
+foreach (['true' => 8288, 'maybe' => 8289, 'false' => 8290] as $flag => $port) {
+    $broken = Servers::start($port, ['DEMO_PUBLIC' => $flag, 'PHP_INI_SCAN_DIR' => $ini]);
+    foreach (['?throw=1' => 'exception', '' => 'fatal error'] as $query => $kind) {
+        $r = (new Client($broken))->get("$a/health$query");
+        T::status(500, $r, "DEMO_PUBLIC=$flag, $kind", 'SERVER_ERROR');
+        T::ok(!preg_match($internal, $r['head'] . $r['raw']), 'nothing internal in the response', $r['raw']);
+        T::eq(['code', 'message'], array_keys($r['body']['error'] ?? []), 'code and message only');
+    }
+}
+$written = (string) file_get_contents($log);
+T::ok(str_contains($written, 'secret detail') && str_contains($written, 'Allowed memory'), 'the server log keeps the cause');
+array_map('unlink', glob("$ini/*"));
+rmdir($ini);
+$public = Servers::start(8291, ['DEMO_PUBLIC' => 'true', 'RATE_LIMIT_MULTIPLIER' => '1000']);
+$down = Servers::start(8292, ['DEMO_PUBLIC' => 'true', 'DB_PORT' => '1']);
+$s = Fixture::shop('public');
+$c = new Client($public);
+$c->csrf = $login($public, [], $c)['body']['data']['csrf'];
+$m = Fixture::login($public, 'merchant', $s['login']);
+[, $adminLogin] = Fixture::staff('admin', 'public_' . Fixture::run());
+$admin = Fixture::login($public, 'admin', $adminLogin);
+$requests = [
+    'database down' => [(new Client($down))->get("$a/shops"), 500],
+    'database down at sign-in' => [$login($down, []), 500],
+    'LINE not configured' => [(new Client(Servers::start(8293, ['DEMO_PUBLIC' => 'true', 'LINE_CHANNEL_SECRET' => ''])))->post("$a/line/webhook", []), null],
+    'unknown route' => [$c->get("$a/nothing"), 404],
+    'wrong method' => [$c->call('DELETE', "$a/shops"), 405],
+    'bad JSON' => [$c->call('PUT', "$a/cart", '{'), 400],
+    'invalid field' => [$c->put("$a/cart", ['shop_id' => $s['shop'], 'items' => [['menu_id' => 'x', 'quantity' => 1]]]), 422],
+    'unknown menu' => [$c->put("$a/cart", ['shop_id' => $s['shop'], 'items' => [['menu_id' => 999999, 'quantity' => 1]]]), 409],
+    'merchant, foreign order' => [$m->post("$a/merchant/orders/999999/accept"), 404],
+    'merchant, invalid field' => [$m->patch("$a/merchant/menus/{$s['menu']}", ['price' => 'x']), 422],
+    'admin, invalid field' => [$admin->post("$a/admin/shops", []), 422],
+    'admin, invalid date' => [$admin->get("$a/admin/reports?from=x"), 422],
+];
+foreach ($requests as $label => [$r, $status]) {
+    T::ok(($status === null ? $r['status'] >= 400 : $r['status'] === $status) && array_keys($r['body']['error'] ?? []) === ['code', 'message'] && !preg_match($internal, $r['head'] . $r['raw']), "$label: code and message only", [$r['status'], $r['raw']]);
+}
+T::eq('demo', $admin->get("$a/admin/settings")['body']['data']['environment'], 'environment name is hidden');
+T::ok(isset((new Client($base))->get("$a/shops?page=1")['body']['data']), 'without DEMO_PUBLIC everything works as before');
 
 T::group('Production refuses everything of the demo');
 foreach (['production', 'staging'] as $i => $mode) {

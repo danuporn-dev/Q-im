@@ -303,7 +303,7 @@ final class Admin
             $notifications[$row['status']] = (int) $row['n'];
         }
         return [
-            'environment' => Env::isDevelopment() ? 'development' : 'production',
+            'environment' => Env::isDemoPublic() ? 'demo' : (Env::isDevelopment() ? 'development' : 'production'),
             'timezone' => 'Asia/Bangkok',
             'line_login' => Env::get('LINE_LOGIN_CHANNEL_ID') !== '' && Env::get('LIFF_ID') !== '',
             'line_messaging' => Env::get('LINE_CHANNEL_ACCESS_TOKEN') !== '',

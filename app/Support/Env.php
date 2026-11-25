@@ -38,6 +38,12 @@ final class Env
         return !self::isDevelopment();
     }
 
+    /** DEMO_PUBLIC: the demo is open to strangers, so clients learn as little as possible. Unclear values count as on. */
+    public static function isDemoPublic(): bool
+    {
+        return !in_array(strtolower(trim(self::get('DEMO_PUBLIC'))), ['', '0', 'false', 'off', 'no'], true);
+    }
+
     public static function get(string $key, string $default = ''): string
     {
         $real = getenv($key);

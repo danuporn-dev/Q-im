@@ -3,12 +3,21 @@ Require all granted
 Options -Indexes
 DirectoryIndex index.php index.html
 
+# Failures before the scripts start, such as an oversized upload, must not show paths or versions either.
+ServerSignature Off
+<IfModule php_module>
+    php_flag display_errors Off
+    php_flag display_startup_errors Off
+</IfModule>
+
 RewriteEngine On
 RewriteRule ^api/v1(/|$) api/index.php [L]
 
 <IfModule mod_headers.c>
     # "/customer" is redirected to "/customer/": without host and scheme it stays HTTPS behind a proxy.
     Header always edit Location "^https?://[^/]+/+" "/"
+    Header always unset X-Powered-By
+    Header unset X-Powered-By
     Header always set X-Content-Type-Options "nosniff"
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
     Header always set X-Frame-Options "DENY"

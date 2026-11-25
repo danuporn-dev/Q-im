@@ -23,7 +23,7 @@ final class AuthController
             'liff_id' => Env::get('LIFF_ID') ?: null,
             'dev_login' => Env::isDevelopment(),
             'demo_customers' => Env::isDevelopment() ? DevMockIdentity::CUSTOMERS : null,
-            'demo_code_required' => Env::isDevelopment() && Env::get('DEMO_ACCESS_CODE') !== '',
+            'demo_code_required' => Env::isDevelopment() && trim(Env::get('DEMO_ACCESS_CODE')) !== '',
             'poll_seconds' => self::pollSeconds(),
         ], 200];
     }
@@ -49,7 +49,7 @@ final class AuthController
     /** DEMO_ACCESS_CODE keeps strangers out of a demo that is open to the internet. Never log the submitted value. */
     private static function checkDemoCode(Request $q): void
     {
-        $code = Env::get('DEMO_ACCESS_CODE');
+        $code = trim(Env::get('DEMO_ACCESS_CODE'));
         if ($code === '') {
             return;
         }

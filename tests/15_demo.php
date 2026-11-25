@@ -11,7 +11,7 @@ $a = '/api/v1';
 $config = static fn (int $port, array $env): array => (new Client(Servers::start($port, $env)))->get("$a/config")['body']['data'] ?? [];
 
 T::group('POLL_SECONDS');
-T::eq(null, $config(8263, ['POLL_SECONDS' => ''])['poll_seconds'], 'unset keeps the built-in intervals');
+T::eq(null, $config(8263, ['POLL_SECONDS' => ' '])['poll_seconds'], 'unset keeps the built-in intervals');
 T::eq(2, $config(8264, ['POLL_SECONDS' => '2', 'RATE_LIMIT_MULTIPLIER' => '1000'])['poll_seconds'], '2 seconds');
 foreach (['1', '0', '61', '2.5', 'fast'] as $i => $bad) {
     T::eq(null, $config(8265 + $i, ['POLL_SECONDS' => $bad])['poll_seconds'], "refused: $bad");

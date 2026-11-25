@@ -41,9 +41,11 @@ Smart Food Court Platform: สั่งอาหารล่วงหน้า �
 ## ทดสอบ
 
 ```powershell
-C:\xampp\php\php.exe tests\run.php       # ทั้งหมด (ใช้ qim_dev, port 8111-8183)
-C:\xampp\php\php.exe tests\run.php 05    # เฉพาะบางไฟล์
-C:\xampp\php\php.exe scripts\e2e.php     # หนึ่งออเดอร์ครบวงจรผ่าน HTTP
+C:\xampp\php\php.exe tests\clean_install.php          # แนะนำ: ทั้งหมดบน qim_fresh_test แล้วลบทิ้ง
+C:\xampp\php\php.exe tests\run.php                    # ทั้งหมดบน qim_dev (เหลือข้อมูลทดสอบ)
+C:\xampp\php\php.exe tests\run.php 05                 # เฉพาะบางไฟล์
+C:\xampp\php\php.exe scripts\e2e.php                  # หนึ่งออเดอร์ครบวงจรผ่าน HTTP
+C:\xampp\php\php.exe scripts\reset-dev.php --confirm  # ลบและสร้าง qim_dev ใหม่
 ```
 
 แจ้งเตือน LINE: `php scripts/notify.php [--watch]`

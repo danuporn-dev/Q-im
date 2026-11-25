@@ -12,6 +12,8 @@ use PDOException;
 /** Checkout and reads. State changes live in OrderFlow. */
 final class Orders
 {
+    /** Largest DECIMAL(10,2), in satang. */
+    private const MAX_TOTAL = 9_999_999_999;
     public const ACTIVE = "('PENDING','ACCEPTED','PREPARING','READY')";
 
     /** @return array{0: int, 1: bool} order id and whether it was created now */
@@ -70,6 +72,9 @@ final class Orders
         }
         if ($priced['has_problems']) {
             throw HttpError::conflict('ITEM_UNAVAILABLE', array_values(array_filter(array_column($priced['items'], 'problem')))[0]);
+        }
+        if (Money::toSatang($priced['total']) > self::MAX_TOTAL) {
+            throw HttpError::invalid('ยอดรวมสูงเกินกว่าที่ระบบรองรับ');
         }
         if (!hash_equals($priced['quote'], $quote)) {
             throw HttpError::conflict('PRICE_CHANGED', 'ราคาหรือรายการเปลี่ยนไป กรุณาตรวจสอบแล้วยืนยันใหม่', ['total' => $priced['total']]);
@@ -147,9 +152,13 @@ final class Orders
         return self::forMerchant($rows[0] ?? throw HttpError::notFound('ไม่พบออเดอร์'));
     }
 
-    /** The last four characters are the pickup code, which only the customer may show. */
+    /**
+     * The last four characters are the pickup code, which only the customer may show. The privacy
+     * notice promises that shops see the food and notes only, so the customer's name is left out.
+     */
     private static function forMerchant(array $order): array
     {
+        unset($order['customer_name']);
         $order['order_no'] = substr($order['order_no'], 0, -4) . '••••';
         return $order;
     }

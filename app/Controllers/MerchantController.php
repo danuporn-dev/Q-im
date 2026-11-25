@@ -28,7 +28,7 @@ final class MerchantController
     {
         $user = Auth::user($q, 'merchant');
         $order = Orders::shopOrder($orderId);
-        Auth::requireShop($user['id'], (int) $order['shop']['id']);
+        Auth::requireShop($user['id'], (int) $order['shop']['id'], 'ไม่พบออเดอร์');
         return [$order, 200];
     }
 
@@ -90,7 +90,7 @@ final class MerchantController
     {
         $user = Auth::user($q, 'merchant');
         $shopId = ShopAdmin::menuShop($menuId);
-        Auth::requireShop($user['id'], $shopId);
+        Auth::requireShop($user['id'], $shopId, 'ไม่พบเมนู');
         return [ShopAdmin::saveMenu($user['id'], $shopId, $menuId, $q->json()), 200];
     }
 

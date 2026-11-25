@@ -72,6 +72,10 @@ final class Auth
     public static function loginStaff(string $realm, string $login, string $password): array
     {
         $account = self::account($realm, 'login_name', $login);
+        // The collation ignores accents; without this check one account would have many rate-limit keys.
+        if ($account !== null && mb_strtolower($account['login_name']) !== mb_strtolower($login)) {
+            $account = null;
+        }
         // Always verify something, so unknown logins take as long as known ones.
         $hash = $account['password_hash'] ?? '$2y$10$wHQ0dQ1yq8z0wV1J9yq0UeQ8f6m3n0J3Kf0xkYt5q1r9mG7y8p0yK';
         $valid = password_verify($password, $hash);
@@ -95,9 +99,21 @@ final class Auth
         return Session::create('customer', ['user_id' => $userId]);
     }
 
+    /** The user of a live session, without any authorization decision. */
+    public static function sessionUserId(string $realm): ?int
+    {
+        $session = Session::read($realm);
+        return $session === null ? null : (int) $session['user_id'];
+    }
+
     private static function upsertCustomer(Identity $identity): int
     {
-        Database::run(
+        return Database::tx(static fn (): int => self::saveCustomer($identity));
+    }
+
+    private static function saveCustomer(Identity $identity): int
+    {
+        $affected = Database::run(
             'INSERT INTO users (line_user_id, display_name, avatar_url, created_at) VALUES (?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE display_name = VALUES(display_name), avatar_url = VALUES(avatar_url)',
             [$identity->subject, mb_substr($identity->displayName, 0, 150), $identity->avatarUrl, Clock::now()]
@@ -106,22 +122,27 @@ final class Auth
         if (!$user['active']) {
             throw new HttpError(403, 'ACCOUNT_DISABLED', 'บัญชีนี้ถูกระงับ กรุณาติดต่อผู้ดูแล');
         }
-        Database::run('INSERT IGNORE INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE name = ?', [$user['id'], 'customer']);
+        // Only a new user gets the role (1 = inserted): a role that an admin removed must stay removed.
+        if ($affected === 1) {
+            Database::run('INSERT IGNORE INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE name = ?', [$user['id'], 'customer']);
+        } elseif (!Database::value("SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ? AND r.name = 'customer'", [$user['id']])) {
+            throw new HttpError(403, 'ACCOUNT_DISABLED', 'บัญชีนี้ถูกระงับ กรุณาติดต่อผู้ดูแล');
+        }
         return (int) $user['id'];
     }
 
     /** Throws 404 rather than 403, so other shops' ids are not revealed. */
-    public static function requireShop(int $userId, int $shopId): void
+    public static function requireShop(int $userId, int $shopId, string $message = 'ไม่พบร้าน'): void
     {
         if (!Database::value('SELECT 1 FROM shop_members WHERE shop_id = ? AND user_id = ?', [$shopId, $userId])) {
-            throw HttpError::notFound('ไม่พบร้าน');
+            throw HttpError::notFound($message);
         }
     }
 
     private static function account(string $realm, string $column, mixed $value): ?array
     {
         $table = self::ACCOUNT_TABLES[$realm];
-        return Database::row("SELECT user_id, password_hash FROM `$table` WHERE `$column` = ? AND active = 1 AND password_hash IS NOT NULL", [$value]);
+        return Database::row("SELECT user_id, login_name, password_hash FROM `$table` WHERE `$column` = ? AND active = 1 AND password_hash IS NOT NULL", [$value]);
     }
 
     private static function fingerprint(array $account): string

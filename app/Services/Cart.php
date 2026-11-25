@@ -62,9 +62,11 @@ final class Cart
             }
         }
         Database::tx(static function () use ($userId, $shopId, $items, $in): void {
-            $cart = Database::row('SELECT c.id, c.shop_id, s.name FROM carts c JOIN shops s ON s.id = c.shop_id WHERE c.user_id = ? FOR UPDATE', [$userId]);
+            // Lock only the cart: locking the shop row too would make carts wait for every checkout.
+            $cart = Database::row('SELECT id, shop_id FROM carts WHERE user_id = ? FOR UPDATE', [$userId]);
             if ($cart !== null && (int) $cart['shop_id'] !== $shopId) {
                 if (($in['replace'] ?? false) !== true) {
+                    $cart['name'] = Database::value('SELECT name FROM shops WHERE id = ?', [$cart['shop_id']]);
                     throw HttpError::conflict('CART_SHOP_CONFLICT', 'ตะกร้ามีอาหารจากร้าน ' . $cart['name'] . ' อยู่ ต้องล้างตะกร้าเดิมก่อน', ['shop_id' => $cart['shop_id'], 'shop_name' => $cart['name']]);
                 }
                 Database::run('DELETE FROM carts WHERE id = ?', [$cart['id']]);

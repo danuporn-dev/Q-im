@@ -185,6 +185,11 @@ final class Admin
         $active = array_key_exists('active', $in) ? Input::bool($in, 'active', 'สถานะ') : null;
         $hash = array_key_exists('password', $in) ? password_hash(self::password($in), PASSWORD_DEFAULT) : null;
         Database::tx(static function () use ($adminId, $userId, $roles, $active, $hash): void {
+            // Serializes role and status changes, so two admins cannot disable each other at once.
+            Database::row("SELECT id FROM roles WHERE name = 'admin' FOR UPDATE");
+            if (!Database::value("SELECT 1 FROM users u JOIN user_roles ur ON ur.user_id = u.id JOIN roles r ON r.id = ur.role_id WHERE u.id = ? AND u.active = 1 AND r.name = 'admin'", [$adminId])) {
+                throw new HttpError(401, 'UNAUTHENTICATED', 'กรุณาเข้าสู่ระบบ');
+            }
             if (Database::row('SELECT id FROM users WHERE id = ? FOR UPDATE', [$userId]) === null) {
                 throw HttpError::notFound('ไม่พบผู้ใช้');
             }

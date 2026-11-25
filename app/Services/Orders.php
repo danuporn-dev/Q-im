@@ -14,6 +14,10 @@ final class Orders
 {
     /** Largest DECIMAL(10,2), in satang. */
     private const MAX_TOTAL = 9_999_999_999;
+    private const CUSTOMER_FIELDS = [
+        'id', 'order_no', 'status', 'total', 'shop', 'queue', 'payment_status', 'payment_method', 'paid_at', 'reason', 'items',
+        'created_at', 'accepted_at', 'preparing_at', 'ready_at', 'completed_at',
+    ];
     public const ACTIVE = "('PENDING','ACCEPTED','PREPARING','READY')";
 
     /** @return array{0: int, 1: bool} order id and whether it was created now */
@@ -119,21 +123,35 @@ final class Orders
             'cancelled' => " AND o.status IN ('CANCELLED','REJECTED')",
             default => '',
         };
-        return self::page($where, [$userId], 'o.id DESC', $limit, $offset);
+        [$rows, $total] = self::page($where, [$userId], 'o.id DESC', $limit, $offset);
+        return [array_map([self::class, 'forCustomer'], $rows), $total];
     }
 
     public static function customerOrder(int $userId, int $orderId): array
     {
         [$rows] = self::page('o.id = ? AND o.user_id = ?', [$orderId, $userId], 'o.id', 1, 0);
-        $order = $rows[0] ?? throw HttpError::notFound('ไม่พบออเดอร์');
+        $order = self::forCustomer($rows[0] ?? throw HttpError::notFound('ไม่พบออเดอร์'));
         $order += Eta::order($orderId, $order['shop']['id'], $order['status']);
         $order['can_cancel'] = $order['status'] === 'PENDING';
         $order['pickup_code'] = substr($order['order_no'], -4);
         $order['timeline'] = array_map(
-            static fn (array $l): array => ['status' => $l['to_status'], 'reason' => $l['reason'], 'at' => Clock::iso($l['created_at'])],
+            static fn (array $l): array => ['status' => $l['to_status'], 'reason' => self::publicReason($l['to_status'], $l['reason']), 'at' => Clock::iso($l['created_at'])],
             Database::rows('SELECT to_status, reason, created_at FROM order_status_logs WHERE order_id = ? ORDER BY id', [$orderId])
         );
         return $order;
+    }
+
+    /** An allow-list, so that a field added for shops or admins never reaches customers by accident. */
+    private static function forCustomer(array $order): array
+    {
+        $order['reason'] = self::publicReason($order['status'], $order['reason']);
+        return array_intersect_key($order, array_flip(self::CUSTOMER_FIELDS));
+    }
+
+    /** Customers are told why an order was refused or cancelled; every other reason is internal to the shop. */
+    private static function publicReason(string $status, ?string $reason): ?string
+    {
+        return in_array($status, ['REJECTED', 'CANCELLED'], true) ? $reason : null;
     }
 
     /** @return array{0: list<array>, 1: int} */

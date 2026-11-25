@@ -38,8 +38,10 @@ $cases = [
     'weak seed password' => [['--confirm'], ['SEED_DEMO_PASSWORD' => 'short'], 'SEED_DEMO_PASSWORD'],
 ];
 foreach ($cases as $label => [$args, $env, $reason]) {
-    [$code, $out] = $php('scripts/reset-dev.php', $args, $env + $closed);
-    T::ok($code === 1 && str_contains($out, 'Refusing') && str_contains($out, $reason), "reset-dev: $label", $out);
+    foreach (['reset-dev', 'demo-reset'] as $script) {
+        [$code, $out] = $php("scripts/$script.php", $args, $env + $closed);
+        T::ok($code === 1 && str_contains($out, 'Refusing') && str_contains($out, $reason), "$script: $label", $out);
+    }
 }
 foreach (['tests/run.php', 'scripts/e2e.php'] as $script) {
     [$code, $out] = $php($script, [], ['APP_ENV' => 'production', 'DB_PORT' => '1']);

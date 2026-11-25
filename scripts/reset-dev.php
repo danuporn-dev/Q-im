@@ -40,7 +40,7 @@ $sessions = glob(dirname(__DIR__) . '/storage/sessions/sess_*') ?: [];
 array_map('unlink', $sessions);
 echo 'Removed ' . count($sessions) . " session(s)\n";
 
-foreach (['migrate.php', 'seed.php'] as $script) {
+foreach (['migrate.php', defined('RESET_SEED') ? RESET_SEED : 'seed.php'] as $script) {
     passthru(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__DIR__ . '/' . $script), $code);
     if ($code !== 0) {
         fwrite(STDERR, "$script failed; run it again after fixing the cause.\n");

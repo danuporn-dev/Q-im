@@ -88,6 +88,8 @@ dialog::backdrop { background: rgb(10 30 20 / .55); }
 .hero.tile { font-size: 4rem; }
 
 /* Customer */
+.demobar { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: .1rem .8rem; min-height: 44px; padding: 0 16px; background: var(--wait-bg); color: var(--wait); border-bottom: 2px dashed #d18a00; }
+.demobar a { color: inherit; min-height: 44px; display: inline-flex; align-items: center; font-weight: 600; }
 .shell { max-width: 720px; margin: 0 auto; padding: 0 16px 96px; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 60px; }
 .topbar h1 { margin: 0; font-size: 1.15rem; }

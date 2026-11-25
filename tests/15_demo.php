@@ -15,6 +15,17 @@ foreach (['1', '0', '61', '2.5', 'fast'] as $i => $bad) {
     T::eq(null, $config(8265 + $i, ['POLL_SECONDS' => $bad])['poll_seconds'], "refused: $bad");
 }
 
+T::group('Demo sign-in is development only');
+foreach (['production', 'staging', ''] as $i => $env) {
+    $base2 = Servers::start(8270 + $i, ['APP_ENV' => $env === '' ? 'unset' : $env]);
+    $data = (new Client($base2))->get("$a/config")['body']['data'];
+    T::eq([false, null], [$data['dev_login'], $data['demo_customers']], "$env: not offered");
+    T::status(404, (new Client($base2))->post("$a/auth/dev", ['customer' => 'CUSTOMER_1']), "$env: refused");
+}
+$c = new Client($base);
+$c->csrf = $c->post("$a/auth/dev", ['customer' => 'CUSTOMER_3'])['body']['data']['csrf'];
+T::eq('ฟ้าใส', $c->get("$a/me")['body']['data']['display_name'], 'demo customers have Thai names');
+
 $binary = Browser::find();
 if ($binary === null) {
     T::skip('POLL', 'no Chrome or Edge; set CHROME_PATH');
@@ -26,6 +37,11 @@ $m = Fixture::login($base, 'merchant', $s['login']);
 $b = new Browser($binary, 9378);
 try {
     $b->size(390, 844);
+    $b->open("$fast/customer/");
+    $b->click('ต้นกล้า');
+    T::ok($b->until("document.querySelector('.demobar').innerText.includes('ต้นกล้า')"), 'one tap on the home page signs in, banner shown');
+    $b->open('http://127.0.0.1:8270/customer/');
+    T::ok($b->sees('เดินไปรับเมื่ออาหารเสร็จ') && !$b->sees('สาธิต', 1), 'production page has no banner and no demo button');
     $b->open("$fast/customer/");
     $b->sees('หน้าหลัก');
     $b->js("fetch('/api/v1/auth/dev',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer:'TEST_POLL'})}).then(r=>r.ok)");

@@ -61,15 +61,17 @@ async function requireLogin() {
     toast('กรุณาเปิดจากเมนูใน LINE', 'bad');
     return false;
   }
-  return (await dialog('เข้าสู่ระบบทดสอบ', (close) => [
-    h('p.notice', {}, 'โหมดพัฒนาเท่านั้น ใช้แทน LINE Login'),
-    ...['CUSTOMER_1', 'CUSTOMER_2'].map((c) => h('p', {}, h('button.btn.block', { type: 'button', onclick: (e) => busy(e.currentTarget, async () => {
-      await post('/auth/dev', { customer: c });
-      await loadMe();
-      close(true);
-    }) }, 'Demo ' + c))),
-  ])) === true;
+  return (await dialog('เข้าสู่ระบบสาธิต', (close) => demoLogin(() => close(true)))) === true;
 }
+
+// Both need the server to run with APP_ENV=development; /auth/dev does not exist otherwise.
+const demoLogin = (done) => h('section.card.stack', {}, h('p.notice', {}, 'โหมดสาธิต ใช้แทน LINE Login แตะเพื่อเข้าเป็นลูกค้า'),
+  Object.entries(config.demo_customers || {}).map(([key, name]) => h('button.btn.block', { type: 'button', onclick: (e) => busy(e.currentTarget, async () => {
+    await post('/auth/dev', { customer: key });
+    await loadMe();
+    await done();
+  }) }, `${name} (ลูกค้าสาธิต)`)));
+const demoBar = () => (config.dev_login ? h('aside.demobar', { 'aria-label': 'โหมดสาธิต' }, h('strong', {}, 'โหมดสาธิต'), h('span', {}, me ? me.display_name : 'ไม่ใช่ LINE จริง')) : '');
 
 // ---- Layout -----------------------------------------------------------------
 
@@ -97,6 +99,7 @@ function frame(tab, content, hideCart = false) {
   const showCart = !hideCart && cart?.count > 0;
   document.body.classList.toggle('has-cart', showCart);
   app.replaceChildren(
+    demoBar(),
     h('main.shell', {}, content),
     showCart ? h('div.cartbar', {}, h('a.btn', { href: '#/cart' }, h('span', {}, `ตะกร้า ${cart.count} รายการ`), h('span', {}, baht(cart.total)))) : '',
     h('nav.tabbar', { 'aria-label': 'เมนูหลัก' }, TABS.map(([k, href, label]) => h('a', { href, 'aria-current': k === tab ? 'page' : null }, icon(k), label))),
@@ -153,6 +156,7 @@ async function home(alive) {
   frame('home', [
     h('header.topbar', {}, h('div.brand', {}, 'Q-im'), h('a.btn.ghost', { href: '#/search' }, 'ค้นหาร้านหรือเมนู')),
     h('section.banner', {}, h('strong', {}, 'สั่งก่อน ไม่ต้องยืนรอ'), 'เดินไปรับเมื่ออาหารเสร็จ'),
+    !me && config.dev_login && !config.liff_id ? demoLogin(route) : null,
     chips, list,
   ]);
   stop = poll(draw, 10000);
@@ -321,7 +325,9 @@ const checkout = (button, redraw) => busy(button, async () => {
 // ---- Orders -----------------------------------------------------------------
 
 function needLogin(tab) {
+  if (config.dev_login && !config.liff_id) return frame(tab, [header('เข้าสู่ระบบ'), demoLogin(route)], true);
   frame(tab, [header('เข้าสู่ระบบ'), empty('เข้าสู่ระบบเพื่อใช้งานส่วนนี้', h('button.btn', { type: 'button', onclick: async () => { if (await requireLogin()) route(); } }, config.liff_id ? 'เข้าสู่ระบบด้วย LINE' : 'เข้าสู่ระบบ'))], true);
+  return undefined;
 }
 
 async function orders(alive) {

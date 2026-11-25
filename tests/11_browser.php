@@ -34,7 +34,7 @@ try {
     $b->click('เมนู <img');
     $b->fill('dialog input[placeholder]', '<svg onload=alert(3)>');
     $b->click('เพิ่มลงตะกร้า', $dialog);
-    $b->click('Demo CUSTOMER_1');
+    $b->click('มินท์');
     T::ok($b->sees('ตะกร้า 1 รายการ'), 'cart bar appears after the first item');
     $b->open("$base/customer/#/cart");
     T::ok($b->sees('ยืนยันออเดอร์ ฿45'), 'cart page with total');

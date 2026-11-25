@@ -10,12 +10,14 @@ ServerSignature Off
     php_flag display_startup_errors Off
 </IfModule>
 
+# Apache would redirect "/customer" to an absolute http:// address, which is wrong behind an HTTPS proxy.
+DirectorySlash Off
 RewriteEngine On
+RewriteOptions AllowNoSlash
+RewriteRule ^(customer|merchant|admin)$ index.php [L]
 RewriteRule ^api/v1(/|$) api/index.php [L]
 
 <IfModule mod_headers.c>
-    # "/customer" is redirected to "/customer/": without host and scheme it stays HTTPS behind a proxy.
-    Header always edit Location "^https?://[^/]+/+" "/"
     Header always unset X-Powered-By
     Header unset X-Powered-By
     Header always set X-Content-Type-Options "nosniff"

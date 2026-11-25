@@ -159,6 +159,8 @@ final class Orders
     private static function forMerchant(array $order): array
     {
         unset($order['customer_name']);
+        $readyAt = $order['ready_at'] === null ? null : rtrim(str_replace('T', ' ', $order['ready_at']), 'Z');
+        $order['can_no_show'] = $order['status'] === 'READY' && $order['payment_status'] === 'UNPAID' && OrderFlow::waitedLongEnough($readyAt);
         $order['order_no'] = substr($order['order_no'], 0, -4) . '••••';
         return $order;
     }

@@ -15,6 +15,8 @@
 | 8 admin, reports, audit | เสร็จ |
 | 9 security, concurrency, responsive, docs | เสร็จ |
 | หลัง MVP: ปิดช่องว่าง | เสร็จ |
+| เทสต์แยกบน `qim_test` | เสร็จ |
+| READY no-show (D26) | เสร็จ |
 
 ## วิธีรันทดสอบ
 
@@ -32,7 +34,6 @@ C:\xampp\php\php.exe scripts\e2e.php
 - T22 ไม่ทำ เพราะ QR pickup เป็น Extension
 - UI ตรวจด้วย Chrome headless (`tests/11_browser.php`) ยังไม่ตรวจบนโทรศัพท์จริง
 - MySQL ยังไม่ได้ทดสอบ
-- คำถาม: ออเดอร์ `READY` ที่ไม่มีคนรับจะปิดอย่างไร; การส่งมอบโดยไม่ใช้รหัสต้องให้ admin อนุมัติหรือไม่
 - ข้อจำกัดอื่นอยู่ใน deploy.md
 
 ## บันทึก

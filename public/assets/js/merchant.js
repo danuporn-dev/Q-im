@@ -65,7 +65,7 @@ async function orders(main) {
     );
     board.replaceChildren(...[['PENDING', 'ใหม่'], ['ACCEPTED', 'รอทำ'], ['PREPARING', 'กำลังทำ'], ['READY', 'พร้อมรับ']].map(([s, label]) => {
       const items = list.filter((o) => o.status === s);
-      return h('section.col', { 'aria-label': label }, h('h2', {}, label, h('span', {}, items.length)), items.length ? h('div.list', {}, items.map((o) => card(o, draw))) : h('p.muted', {}, 'ไม่มีออเดอร์'));
+      return h('section.col', { 'aria-label': label }, h('h2', {}, label, h('span', {}, items.length)), items.length ? h('div.list', {}, items.map((o) => card(o, draw, shop.ready_alert_minutes))) : h('p.muted', {}, 'ไม่มีออเดอร์'));
     }));
   };
   await draw();
@@ -85,7 +85,7 @@ function beep() {
 
 const lines = (o) => h('ul', {}, o.items.map((i) => h('li', {}, `${i.quantity} × ${i.name}`, i.options.length ? h('div.muted', {}, i.options.map((x) => x.name).join(', ')) : null, i.note ? h('div', {}, 'หมายเหตุ: ', i.note) : null)));
 
-function card(o, refresh) {
+function card(o, refresh, readyAlert) {
   const act = (action, body) => async (e) => {
     const button = e?.currentTarget;
     await busy(button, async () => {
@@ -107,10 +107,11 @@ function card(o, refresh) {
     PENDING: () => [button('รับออเดอร์', act('accept')), button('ปฏิเสธ', reasoned('reject', 'ปฏิเสธออเดอร์', 'ปฏิเสธ', ['วัตถุดิบหมด', 'ร้านกำลังจะปิด', 'ออเดอร์เต็ม']), '.danger.ghost')],
     ACCEPTED: () => [button('เริ่มทำ', act('prepare')), button('ยกเลิก', reasoned('cancel', 'ยกเลิกออเดอร์', 'ยกเลิกออเดอร์', ['วัตถุดิบหมด', 'ลูกค้าขอยกเลิก']), '.danger.ghost')],
     PREPARING: () => [button('อาหารพร้อม', act('ready')), button('ยกเลิก', reasoned('cancel', 'ยกเลิกออเดอร์ที่กำลังทำ', 'ยกเลิกออเดอร์', ['อุปกรณ์ขัดข้อง', 'ลูกค้าขอยกเลิก']), '.danger.ghost')],
-    READY: () => [o.payment_status === 'PAID' ? button('ส่งมอบ', (e) => pickup(o, refresh, e.currentTarget)) : button(`รับเงิน ${baht(o.total)}`, act('payment'))],
+    READY: () => [o.payment_status === 'PAID' ? button('ส่งมอบ', (e) => pickup(o, refresh, e.currentTarget)) : button(`รับเงิน ${baht(o.total)}`, act('payment')),
+      o.can_no_show ? button('ลูกค้าไม่มารับ', reasoned('cancel', 'ยกเลิกเพราะลูกค้าไม่มารับ', 'ยกเลิกออเดอร์', ['ลูกค้าไม่มารับภายในเวลา', 'ติดต่อลูกค้าไม่ได้']), '.danger.ghost') : null],
   }[o.status]();
   const readyFor = o.ready_at ? Math.floor((Date.now() - new Date(o.ready_at)) / 60000) : 0;
-  const late = (o.status === 'PENDING' && waited >= 5) || (o.status === 'READY' && readyFor >= 20);
+  const late = (o.status === 'PENDING' && waited >= 5) || (o.status === 'READY' && readyFor >= readyAlert);
   return h('article.ocard' + (late ? '.late' : ''), {},
     h('div.row.between', {}, h('span.q', {}, o.queue ? queueNo(o.queue.number) : 'ใหม่'), h('span.muted', {}, `สั่ง ${time(o.created_at)}`)),
     o.queue && o.queue.business_date !== today() ? h('div.muted', {}, 'คิววันที่ ', o.queue.business_date) : null,

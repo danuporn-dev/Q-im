@@ -117,9 +117,11 @@ PENDING -> REJECTED (merchant)
 PENDING -> CANCELLED (customer or authorized merchant)
 ACCEPTED -> CANCELLED (merchant, reason required)
 PREPARING -> CANCELLED (merchant exception only, reason required)
+READY -> CANCELLED (merchant no-show only: UNPAID, minimum wait passed, reason required)
 ```
 
 - COMPLETED, CANCELLED, REJECTED เป็น terminal states; READY ที่ไม่ได้รับนานให้แจ้งร้านตรวจสอบ ไม่ auto-cancel หรือทิ้งอาหารโดยไม่มีนโยบายที่ได้รับอนุมัติ
+- No-show (อนุมัติแล้ว): สมาชิกร้านยกเลิก READY เองได้เมื่อ payment ยัง UNPAID, พร้อมรับครบเวลาขั้นต่ำเท่าตัวเตือน READY (`READY_ALERT_MINUTES` ค่าเริ่มต้น 20) และใส่เหตุผล; ตรวจแบบ atomic, บันทึก order_status_logs และ audit_logs; PAID แล้วห้ามยกเลิก; ระบบไม่ยกเลิกให้เอง
 - ห้ามย้อนสถานะโดยไม่มี workflow ที่อนุมัติ; ทุก transition ตรวจสิทธิ์และ current state ที่ backend พร้อมบันทึก actor, timestamp, reason
 - ACCEPTED = รอทำอาหาร (queue waiting); PREPARING = กำลังทำ; READY = พร้อมรับ; COMPLETED = รับแล้ว
 - Queue status เป็นผลจาก order status; ไม่ให้สองแหล่งข้อมูลเปลี่ยนแยกกันจนขัดแย้ง

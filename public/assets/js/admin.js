@@ -62,7 +62,7 @@ const form = (title, fields, save, label = 'บันทึก') => dialog(title
 async function overview(main) {
   const o = await get('/admin/overview');
   const stat = (label, value) => h('div.card.stat', {}, h('span.muted', {}, label), h('b', {}, value));
-  main.replaceChildren(h('h1', {}, 'ภาพรวมวันนี้'), o.ready_too_long ? h('p.notice', {}, `มี ${o.ready_too_long} ออเดอร์พร้อมรับเกิน 30 นาที`) : '',
+  main.replaceChildren(h('h1', {}, 'ภาพรวมวันนี้'), o.ready_too_long ? h('p.notice', {}, `มี ${o.ready_too_long} ออเดอร์พร้อมรับเกิน ${o.ready_alert_minutes} นาที`) : '',
     h('div.stats', {}, stat('ยอดขายที่ชำระแล้ว', baht(o.today.sales)), stat('ออเดอร์ใหม่', o.today.placed), stat('สำเร็จ', o.today.completed), stat('ปฏิเสธ', o.today.rejected), stat('ยกเลิก', o.today.cancelled), stat('ร้านเปิดรับ', `${o.shops_open} / ${o.shops_active}`), stat('ลูกค้า', o.customers)),
     h('h2', {}, 'ออเดอร์ที่ยังเปิดอยู่'), h('div.stats', {}, ['PENDING', 'ACCEPTED', 'PREPARING', 'READY'].map((s) => stat(STATUS[s][0], o.active_orders[s] || 0))));
 }

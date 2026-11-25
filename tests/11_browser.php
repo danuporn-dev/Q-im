@@ -94,12 +94,18 @@ try {
     T::ok($b->sees('รับออเดอร์') && $b->sees('<svg onload'), 'board shows the order and its note as text');
     $late = "document.querySelectorAll('.ocard.late').length";
     T::eq(0, $b->js($late), 'no alert while orders are fresh');
+    T::ok(!$b->sees('ลูกค้าไม่มารับ', 0.5), 'no no-show button before the wait');
     Database::update('orders', $order, ['created_at' => $ago(6)]);
     T::ok($b->sees('รอยืนยันมา 6 นาที'), 'PENDING for 6 minutes: alert appears through polling');
     Database::update('orders', $ready, ['ready_at' => $ago(21)]);
     T::ok($b->sees('พร้อมรับมา 21 นาที กรุณาตรวจสอบ'), 'READY for 21 minutes: alert appears through polling');
     T::eq(2, $b->js($late), 'only the two late orders are marked');
     T::eq(['PENDING', 'PENDING', 'READY'], array_column(Database::rows('SELECT status FROM orders WHERE id IN (?, ?, ?) ORDER BY status', [$order, $fresh, $ready]), 'status'), 'nothing is cancelled automatically');
+    $b->click('ลูกค้าไม่มารับ');
+    $b->click('ติดต่อลูกค้าไม่ได้', $dialog);
+    $b->click('ยกเลิกออเดอร์', $dialog);
+    T::ok($b->until("!document.body.innerText.includes('พร้อมรับมา 21 นาที')"), 'no-show button cancels the order on the board');
+    T::eq(['CANCELLED', 'ติดต่อลูกค้าไม่ได้'], [Database::value('SELECT status FROM orders WHERE id = ?', [$ready]), Database::value('SELECT reason FROM order_status_logs WHERE order_id = ? ORDER BY id DESC LIMIT 1', [$ready])], 'saved with its reason');
     foreach ([390, 768, 1280] as $width) {
         $b->size($width);
         $bad = [];

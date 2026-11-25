@@ -20,7 +20,7 @@ final class ShopAdmin
         $shop['accepting_orders'] = (bool) $shop['accepting_orders'];
         $shop['active'] = (bool) $shop['active'];
         $hours = Catalog::hours([$shopId])[$shopId] ?? [];
-        return $shop + ['hours' => $hours, 'is_open' => $shop['active'] && $shop['accepting_orders'] && Catalog::withinHours($hours)];
+        return $shop + ['ready_alert_minutes' => OrderFlow::readyWaitMinutes(), 'hours' => $hours, 'is_open' => $shop['active'] && $shop['accepting_orders'] && Catalog::withinHours($hours)];
     }
 
     public static function updateSettings(int $userId, int $shopId, array $in): array

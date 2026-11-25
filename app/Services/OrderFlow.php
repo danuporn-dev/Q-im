@@ -5,6 +5,7 @@ namespace App\Services;
 
 use App\Support\Clock;
 use App\Support\Database;
+use App\Support\Env;
 use App\Support\HttpError;
 use App\Support\Input;
 
@@ -20,9 +21,22 @@ final class OrderFlow
         'reject' => [['PENDING'], 'REJECTED', true, 'ORDER_REJECTED'],
         'prepare' => [['ACCEPTED'], 'PREPARING', false, null],
         'ready' => [['PREPARING'], 'READY', false, 'ORDER_READY'],
-        'cancel' => [['PENDING', 'ACCEPTED', 'PREPARING'], 'CANCELLED', true, 'ORDER_CANCELLED'],
+        'cancel' => [['PENDING', 'ACCEPTED', 'PREPARING', 'READY'], 'CANCELLED', true, 'ORDER_CANCELLED'],
     ];
     private const STAMP = ['ACCEPTED' => 'accepted_at', 'PREPARING' => 'preparing_at', 'READY' => 'ready_at', 'COMPLETED' => 'completed_at'];
+
+    /** Minutes an order may stay READY before the shop is alerted and may close it as a no-show. */
+    public static function readyWaitMinutes(): int
+    {
+        $value = Env::get('READY_ALERT_MINUTES', '20');
+        return preg_match('/^\d{1,4}$/D', $value) && (int) $value >= 1 && (int) $value <= 1440 ? (int) $value : 20;
+    }
+
+    /** $readyAt is UTC, or null when the order is not ready. */
+    public static function waitedLongEnough(?string $readyAt): bool
+    {
+        return $readyAt !== null && strtotime($readyAt . ' UTC') + self::readyWaitMinutes() * 60 <= Clock::timestamp();
+    }
 
     public static function cancelByCustomer(int $userId, int $orderId): void
     {
@@ -53,6 +67,10 @@ final class OrderFlow
                 throw HttpError::conflict('INVALID_STATE', 'สถานะออเดอร์เปลี่ยนไปแล้ว', ['status' => $order['status']]);
             }
             $reason = $needsReason ? Input::text($in, 'reason', 'เหตุผล', 300) : null;
+            if ($order['status'] === 'READY' && $to === 'CANCELLED') {
+                self::checkNoShow($order);
+                Audit::log($userId, 'order.no_show', 'order', $orderId, ['shop_id' => (int) $order['shop_id'], 'reason' => $reason]);
+            }
             if ($to === 'ACCEPTED') {
                 self::assignQueue($order);
             }
@@ -106,9 +124,20 @@ final class OrderFlow
         });
     }
 
+    /** The order row is locked, and payments are only confirmed under that lock, so the check stays true until commit. */
+    private static function checkNoShow(array $order): void
+    {
+        if (Database::value('SELECT status FROM payments WHERE order_id = ? FOR UPDATE', [$order['id']]) !== 'UNPAID') {
+            throw HttpError::conflict('ALREADY_PAID', 'ออเดอร์นี้ชำระแล้ว ยกเลิกไม่ได้');
+        }
+        if (!self::waitedLongEnough($order['ready_at'])) {
+            throw HttpError::conflict('NO_SHOW_TOO_EARLY', 'ยกเลิกเพราะลูกค้าไม่มารับได้เมื่อพร้อมรับครบ ' . self::readyWaitMinutes() . ' นาที');
+        }
+    }
+
     private static function lock(int $orderId): ?array
     {
-        return Database::row('SELECT id, public_order_no, user_id, shop_id, status, total FROM orders WHERE id = ? FOR UPDATE', [$orderId]);
+        return Database::row('SELECT id, public_order_no, user_id, shop_id, status, total, ready_at FROM orders WHERE id = ? FOR UPDATE', [$orderId]);
     }
 
     private static function lockForMember(int $userId, int $orderId): array

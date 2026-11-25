@@ -280,7 +280,8 @@ final class Admin
             'shops_open' => (int) Database::value('SELECT COUNT(*) FROM shops WHERE active = 1 AND accepting_orders = 1'),
             'shops_active' => (int) Database::value('SELECT COUNT(*) FROM shops WHERE active = 1'),
             'customers' => (int) Database::value("SELECT COUNT(*) FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE r.name = 'customer'"),
-            'ready_too_long' => (int) Database::value("SELECT COUNT(*) FROM orders WHERE status = 'READY' AND ready_at < ?", [gmdate('Y-m-d H:i:s', Clock::timestamp() - 1800)]),
+            'ready_too_long' => (int) Database::value("SELECT COUNT(*) FROM orders WHERE status = 'READY' AND ready_at < ?", [gmdate('Y-m-d H:i:s', Clock::timestamp() - OrderFlow::readyWaitMinutes() * 60)]),
+            'ready_alert_minutes' => OrderFlow::readyWaitMinutes(),
         ];
     }
 

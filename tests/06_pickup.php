@@ -21,7 +21,7 @@ T::eq(1, (int) Database::value("SELECT COUNT(*) FROM notifications WHERE order_i
 $v = $c->get("$a/orders/$o")['body']['data'];
 T::eq(['READY', null], [$v['status'], $v['eta_minutes']], 'tracking shows READY and no waiting time');
 T::eq(['PENDING', 'ACCEPTED', 'PREPARING', 'READY'], array_column($v['timeline'], 'status'), 'timeline');
-T::status(409, $m->post("$a/merchant/orders/$o/cancel", ['reason' => 'x']), 'READY cannot be cancelled', 'INVALID_STATE');
+T::status(409, $m->post("$a/merchant/orders/$o/cancel", ['reason' => 'x']), 'READY cannot be cancelled at once', 'NO_SHOW_TOO_EARLY');
 
 T::group('T16 complete before paid');
 $code = $v['pickup_code'];

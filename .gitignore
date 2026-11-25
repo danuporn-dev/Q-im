@@ -16,3 +16,7 @@
 .idea/
 .DS_Store
 Thumbs.db
+
+# Demo photos stay on the presenting computer
+/public/assets/images/demo/*
+!/public/assets/images/demo/.gitkeep

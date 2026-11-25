@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Support\Env;
 use App\Support\HttpError;
 
 /** Uploads are re-encoded to JPEG and stored outside the web root. */
@@ -44,10 +45,17 @@ final class Images
     public static function output(string $key): void
     {
         $path = self::path($key);
+        $type = 'image/jpeg';
         if (!is_file($path)) {
-            throw HttpError::notFound('ไม่พบรูป');
+            // Placeholders drawn by scripts/seed-demo.php; uploads are never SVG.
+            $path = substr($path, 0, -4) . '.svg';
+            if (!Env::isDevelopment() || !is_file($path)) {
+                throw HttpError::notFound('ไม่พบรูป');
+            }
+            $type = 'image/svg+xml';
+            header("Content-Security-Policy: default-src 'none'");
         }
-        header('Content-Type: image/jpeg');
+        header("Content-Type: $type");
         header('X-Content-Type-Options: nosniff');
         header('Cache-Control: public, max-age=31536000, immutable');
         header('Content-Length: ' . filesize($path));

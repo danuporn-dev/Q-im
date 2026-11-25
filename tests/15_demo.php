@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 // Presentation helpers. Polling speed is a plain setting; everything else works only with APP_ENV=development.
 
+use App\Support\Database;
+
 require_once __DIR__ . '/browser.php';
 
 $a = '/api/v1';
@@ -26,11 +28,80 @@ $c = new Client($base);
 $c->csrf = $c->post("$a/auth/dev", ['customer' => 'CUSTOMER_3'])['body']['data']['csrf'];
 T::eq('ฟ้าใส', $c->get("$a/me")['body']['data']['display_name'], 'demo customers have Thai names');
 
+T::group('seed-demo.php');
+$run = static function (array $env) use (&$out): int {
+    $p = proc_open([PHP_BINARY, dirname(__DIR__) . '/scripts/seed-demo.php'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env + getenv(), ['bypass_shell' => true]);
+    $out = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
+    return proc_close($p);
+};
+foreach ([['APP_ENV' => 'production'], ['APP_ENV' => 'staging'], ['SEED_DEMO_PASSWORD' => 'short'], ['DB_NAME' => 'qim_other_db'], ['DB_HOST' => '10.255.255.1']] as $env) {
+    T::ok($run($env + ['DB_PORT' => '1']) === 1 && str_contains($out, 'Refusing'), 'refuses ' . json_encode($env), $out);
+}
+T::ok($run([]) === 1 && str_contains($out, 'demo-reset'), 'refuses to mix with the ordinary seed', $out);
+Database::run("UPDATE food_courts SET active = 0 WHERE name = 'โรงอาหารกลาง (Demo)'");
+T::eq(0, $run([]), 'seeds');
+$tables = static fn (): array => array_map(static fn ($t) => Database::value("SELECT COUNT(*) FROM $t"), ['shops', 'menus', 'menu_options', 'users', 'shop_members', 'user_roles', 'categories']);
+$first = $tables();
+T::eq(0, $run([]), 'seeds again');
+T::eq($first, $tables(), 'a second run adds nothing');
+$court = (int) Database::value("SELECT id FROM food_courts WHERE name = 'โรงอาหารกลาง'");
+$demo = array_column(Database::rows('SELECT id FROM shops WHERE food_court_id = ? ORDER BY id', [$court]), 'id');
+T::eq(3, count($demo), 'three shops in one food court');
+$anon = new Client($base);
+$prod = new Client('http://127.0.0.1:8270');
+foreach ($demo as $i => $id) {
+    $view = $anon->get("$a/shops/$id")['body']['data'];
+    $list = $anon->get("$a/shops/$id/menus")['body']['data']['menus'];
+    T::ok($view['is_open'] && $view['eta_minutes'] >= 1 && $view['eta_minutes'] <= 10 && count($list) >= 6 && count($list) <= 8, "{$view['name']}: open, sensible ETA, 6 to 8 menus", [$view['eta_minutes'], count($list)]);
+    $bad = [];
+    foreach ([$view, ...$list] as $x) {
+        $key = substr((string) $x['image_url'], 6);
+        $r = $anon->get("$a/images/$key");
+        if ($r['status'] !== 200 || !preg_match('#Content-Type: image/(jpeg|svg\+xml)#i', $r['head'])) {
+            $bad[] = $x['name'];
+        }
+        if (str_contains($r['head'], 'svg') && $prod->get("$a/images/$key")['status'] !== 404) {
+            $bad[] = 'placeholder served in production';
+        }
+    }
+    T::eq([], $bad, 'every picture loads; placeholders only in development');
+
+    // The whole cycle with the demo data of this shop.
+    $c = new Client($base);
+    $c->csrf = $c->post("$a/auth/dev", ['customer' => 'CUSTOMER_' . ($i + 1)])['body']['data']['csrf'];
+    $m = Fixture::login($base, 'merchant', 'demo_merchant_' . ($i + 1));
+    $dish = $list[0];
+    $options = [];
+    foreach ($dish['option_groups'] as $g) {
+        array_push($options, ...array_column(array_slice($g['options'], 0, max(1, $g['min_select'])), 'id'));
+    }
+    $cart = $c->put("$a/cart", ['shop_id' => $id, 'items' => [['menu_id' => $dish['id'], 'quantity' => 1, 'option_ids' => $options]], 'replace' => true]);
+    $r = $c->post("$a/orders", ['idempotency_key' => bin2hex(random_bytes(16)), 'quote' => $cart['body']['data']['quote'] ?? '']);
+    T::status(201, $r, 'order with the demo customer');
+    $o = $r['body']['data']['id'];
+    $statuses = [];
+    foreach (['accept', 'prepare', 'ready', 'payment'] as $x) {
+        $statuses[] = $m->post("$a/merchant/orders/$o/$x")['status'];
+        $v = $c->get("$a/orders/$o")['body']['data'];
+        if ($x === 'accept') {
+            T::ok($v['queue']['number'] >= 1 && $v['eta_minutes'] >= 1 && $v['eta_minutes'] <= 15, 'queue and ETA', $v['eta_minutes']);
+        }
+    }
+    $statuses[] = $m->post("$a/merchant/orders/$o/complete", ['pickup_code' => $v['pickup_code']])['status'];
+    T::eq([200, 200, 200, 200, 200], $statuses, 'accept, prepare, ready, payment, complete');
+    T::eq('COMPLETED', $c->get("$a/orders/$o")['body']['data']['status'], 'completed');
+}
+$shopEdit = $anon->get("$a/shops/{$demo[2]}/menus")['body']['data']['menus'][0];
+T::status(200, $m->patch("$a/merchant/menus/{$shopEdit['id']}", ['image_url' => $shopEdit['image_url'], 'price' => '31']), 'a demo menu can be edited during the presentation');
+
+Database::run("UPDATE food_courts SET active = 1 WHERE name = 'โรงอาหารกลาง (Demo)'");
+
 $binary = Browser::find();
 if ($binary === null) {
     T::skip('POLL', 'no Chrome or Edge; set CHROME_PATH');
     return;
 }
+T::group('Demo sign-in and polling in a browser');
 $fast = 'http://127.0.0.1:8264';
 $s = Fixture::shop('poll');
 $m = Fixture::login($base, 'merchant', $s['login']);

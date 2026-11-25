@@ -33,3 +33,4 @@
 | D27 | ส่งมอบโดยไม่ใช้รหัส **(กำหนดแล้ว)** | ร้านทำเองพร้อมเหตุผล ไม่ต้องให้ admin อนุมัติ; audit `pickup.override` filter ได้ที่ `GET /admin/audit-logs?action=pickup.override`; หน้า admin แสดงจำนวนสะสมต่อร้านแบบอ่านอย่างเดียว |
 | D28 | การสาธิต **(กำหนดแล้ว)** | `demo-reset.php` = reset `qim_dev` + `seed-demo.php` (แทน `seed.php`); ป้าย, login แตะเดียว, แชทจำลอง และ placeholder SVG ใช้ได้เฉพาะ `APP_ENV=development`; `POLL_SECONDS` (2–60) ใช้ได้ทุก environment ว่าง = ค่าเดิม 6–10 วินาที |
 | D29 | ข้อมูลออเดอร์ที่ลูกค้าเห็น | allow-list ใน `Orders::forCustomer`; `reason` ส่งเฉพาะ `REJECTED`/`CANCELLED` (รวม no-show) เหตุผลการส่งมอบโดยไม่ใช้รหัสเห็นเฉพาะร้านและผู้ดูแล |
+| D30 | สาธิตผ่านอินเทอร์เน็ต **(กำหนดแล้ว)** | `DEMO_ACCESS_CODE` (เฉพาะ development; นับเฉพาะรหัสผิด 20 ครั้ง/15 นาที/IP), `DEMO_PUBLIC` ค่าที่ไม่ชัดเจนถือว่าเปิด, `TRUSTED_PROXY` เชื่อ `X-Forwarded-*` ค่าสุดท้ายจาก IP ที่ระบุตรงตัวเท่านั้น; VirtualHost ต้องมี allow-list |

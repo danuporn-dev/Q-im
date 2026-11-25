@@ -25,8 +25,14 @@
            AllowOverride All
            Require all granted
        </Directory>
+       # เปิดเฉพาะเส้นทางของ Q-im: XAMPP แขวน /phpmyadmin, /server-status ฯลฯ ไว้กับทุก VirtualHost
+       <LocationMatch "(?i)^/(?!$|index\.php$|(customer|merchant|admin|assets|api)(/|$))">
+           Require all denied
+       </LocationMatch>
    </VirtualHost>
    ```
+
+   **ห้ามตัด `LocationMatch` ออก** หากตัดออก `/phpmyadmin` จะเปิดได้ผ่าน ngrok เพราะ XAMPP เห็นคำขอมาจากเครื่องตัวเอง (ทดสอบแล้วตอบ 200 เมื่อไม่มี และ 403 เมื่อมี)
 
 3. เปิด Windows Firewall เฉพาะ port 8080 จากเครื่องใน subnet เดียวกัน (PowerShell แบบ Administrator)
 
@@ -89,7 +95,65 @@
 
 ถ้าอยากโชว์คิวหลายคน: ใช้มือถือเครื่องที่สองเป็น **ต้นกล้า** สั่งร้านเดียวกันแล้วให้ร้านรับต่อจากมินท์ ก่อนกดเริ่มทำ จะเห็น "มี 1 คิวก่อนหน้า"
 
-## 5. แก้ปัญหาเฉพาะหน้า
+## 5. เปิดผ่านอินเทอร์เน็ตด้วย ngrok (ทางเลือก)
+
+ใช้เมื่อมือถือเข้าเครือข่ายเดียวกันไม่ได้ ทั้งโลกที่รู้ URL จะเข้าถึงหน้าเว็บได้ จึงใช้เฉพาะข้อมูลสาธิต เปิดเท่าที่จำเป็น และปิดทันทีเมื่อจบ ต้องตั้ง VirtualHost ในหัวข้อ 1 ก่อน
+
+**ค่าใน `.env`** (สร้างรหัสเข้าชมใหม่ทุกงาน ใช้ 8 ตัวอักษรขึ้นไป ไม่ซ้ำกับรหัสผ่าน ห้าม commit)
+
+```ini
+APP_ENV=development
+APP_URL=https://<ชื่อที่ได้>.ngrok-free.app
+DEMO_ACCESS_CODE=<รหัสเข้าชม>
+DEMO_PUBLIC=true
+TRUSTED_PROXY=127.0.0.1,::1
+POLL_SECONDS=2
+LIFF_ID=
+```
+
+| ค่า | ผล |
+|---|---|
+| `DEMO_ACCESS_CODE` | ต้องกรอกรหัสก่อนแตะชื่อลูกค้าสาธิต ผิดเกิน 20 ครั้งใน 15 นาทีต่อ IP จะถูกพัก ว่าง = ไม่ถามรหัส **ห้ามเว้นว่างเมื่อเปิด ngrok** |
+| `DEMO_PUBLIC` | ไม่ส่งรายละเอียด error, stack trace และชื่อ environment ให้ client ส่วน log ใน `storage/logs` เหมือนเดิม |
+| `TRUSTED_PROXY` | เชื่อ `X-Forwarded-*` เฉพาะจาก ngrok ในเครื่อง ทำให้ cookie เป็น `Secure`, ตรวจ Origin ถูก และนับ rate limit ตาม IP ผู้ชมจริง ห้ามใส่ IP ของเครื่องอื่น |
+| `APP_URL` | ใช้ในลิงก์ของข้อความแจ้งเตือนเท่านั้น หน้าเว็บใช้ที่อยู่แบบ relative |
+
+แก้ `.env` แล้วมีผลทันที ไม่ต้อง restart
+
+**เปิด** (ใส่ authtoken ของตัวเองด้วย `ngrok config add-authtoken` ครั้งเดียว)
+
+```powershell
+ngrok http http://127.0.0.1:8080 --inspect=false
+```
+
+- ชี้ไปที่ port 8080 เท่านั้น **ห้ามเปิด port 80** เพราะเป็น htdocs ทั้งหมดพร้อม phpMyAdmin
+- `--inspect=false` ปิดหน้า `http://127.0.0.1:4040` ที่เก็บคำขอรวมถึงรหัสผ่าน
+- ไม่ใช้ `--host-header=rewrite` เพราะระบบต้องเห็น Host สาธารณะ
+- ถ้าใช้ ngrok อย่างเดียว เปลี่ยน `Listen 8080` เป็น `Listen 127.0.0.1:8080` และไม่ต้องเปิด firewall ในหัวข้อ 1
+
+**เช็กลิสต์ก่อนเปิดให้ผู้ชม**
+
+- [ ] รัน `demo-reset.php --confirm` ลบ session เดิมทั้งหมด รวมถึงที่สร้างก่อนตั้งรหัส
+- [ ] `SEED_DEMO_PASSWORD` ไม่เคยเผยแพร่ที่ใด ถ้าเคยส่งต่อ ฉายจอ หรือพิมพ์ในแชท ให้เปลี่ยนก่อนรัน `demo-reset.php`
+- [ ] `https://<ชื่อ>.ngrok-free.app/phpmyadmin/`, `/server-status` และ `/.env` ต้องตอบ 403 ถ้าไม่ใช่ ให้ปิด ngrok ทันที
+- [ ] `/api/v1/config` แสดง `"demo_code_required":true`
+- [ ] มือถือ (ปิด Wi-Fi ใช้ mobile data) กรอกรหัสแล้วสั่งได้ และรหัสผิดเข้าไม่ได้
+- [ ] ร้านและผู้ดูแลใช้ `http://localhost:8080/` บนโน้ตบุ๊ก ไม่เปิดผ่าน URL สาธารณะ
+
+**หน้าเตือนและ URL ของ ngrok**
+
+- แพ็กเกจฟรีแสดงหน้าเตือนก่อนเข้าครั้งแรกของแต่ละเบราว์เซอร์ ให้ผู้ชมกด "Visit Site" เปิดผ่านไว้ก่อนบนเครื่องที่ใช้สาธิต
+- ถ้าไม่ได้ใช้ domain ที่จองไว้ URL อาจเปลี่ยนทุกครั้งที่เปิด ต้องแก้ `APP_URL` ทำ QR ใหม่ และ login ใหม่ เพราะ cookie ผูกกับ URL เดิม
+- แพ็กเกจฟรีจำกัดปริมาณคำขอ ถ้าผู้ชมมากให้เพิ่ม `POLL_SECONDS` เป็น 5 และดูโควตาในหน้า dashboard ของ ngrok
+
+**หลังปิด**
+
+- [ ] กด `Ctrl+C` ที่ ngrok แล้วตรวจว่า URL เปิดไม่ได้
+- [ ] ล้าง `DEMO_ACCESS_CODE`, `TRUSTED_PROXY` และตั้ง `DEMO_PUBLIC=false`
+- [ ] รัน `demo-reset.php --confirm` เพื่อตัดทุก session
+- [ ] ทำหัวข้อ "หลังจบ"
+
+## 6. แก้ปัญหาเฉพาะหน้า
 
 | อาการ | ทำ |
 |---|---|
@@ -101,10 +165,13 @@
 | มือถือค้างที่ออเดอร์เก่า/401 หลัง reset | เปิด `/customer/` ใหม่แล้วแตะชื่อลูกค้า (user และออเดอร์เริ่มนับใหม่) |
 | ต้อง reset กลางคัน | รัน `demo-reset.php --confirm` แล้ว login ร้านและผู้ดูแลใหม่ โหลดมือถือใหม่ (ใช้เวลาไม่ถึงนาที) |
 | ร้านปิด/สั่งไม่ได้ | ร้านกด "เปิดรับออเดอร์" ร้านสาธิตไม่กำหนดเวลาเปิดปิด จึงสั่งได้ทุกวันทุกเวลา |
+| ngrok ขึ้น `ERR_NGROK_8012`/502 | Apache port 8080 ไม่ได้รัน หรือไม่ได้ใช้ `127.0.0.1` ในคำสั่ง |
+| ผ่าน ngrok แล้วตอบ `CROSS_ORIGIN` | `TRUSTED_PROXY` ไม่ได้ตั้ง หรือใช้ `--host-header=rewrite` |
+| ผู้ชมใส่รหัสแล้วติด 429 | มีคนบน IP เดียวกันใส่ผิดเกิน 20 ครั้ง รอ 15 นาที หรือ reset |
 | Apache เริ่มไม่ได้ | port 8080 ถูกใช้: `netstat -ano \| findstr :8080` ปิดโปรแกรมนั้น หรือเปลี่ยนเลข port ทั้งใน vhost, firewall และ URL |
 | reset ล้มเหลวกลางทาง | ตรวจว่า MySQL รันอยู่ แล้วรันคำสั่งเดิมซ้ำ |
 
-## 6. หลังจบ
+## 7. หลังจบ
 
 1. ลบ rule: `Remove-NetFirewallRule -DisplayName "Qim demo 8080"`
 2. ลบ block port 8080 ออกจาก `httpd-vhosts.conf` แล้ว restart หรือ Stop Apache

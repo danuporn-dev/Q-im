@@ -234,6 +234,7 @@ flowchart LR
 | notifications | id, order_id, user_id, event_type, dedupe_key UNIQUE, status, attempts, next_attempt_at, sent_at, last_error |
 | audit_logs | id, actor_user_id, action, entity_type, entity_id, safe_metadata, created_at |
 | pickup_tokens | order_id PK, nonce, token_hash UNIQUE, expires_at, used_at (ตัว token คือ HMAC ด้วยคีย์นอกฐานข้อมูล) |
+| images | id CHAR(32) PK (ชื่อสุ่ม), shop_id FK, uploaded_by, width, height, bytes, created_at — รูปที่ร้านอัปโหลด (D41); `menus.art` = ภาพวาดที่ร้านเลือกเมื่อไม่มีรูป |
 | favorite_shops / favorite_menus | (user_id, shop_id/menu_id) PK |
 | reviews | id, order_id UNIQUE, shop_id, user_id, rating 1–5, comment ≤ 500, hidden_at, hidden_by |
 | notification_reads | notification_id PK, read_at (แยกจาก outbox) |
@@ -283,6 +284,8 @@ Prefix `/api/v1`; JSON response `{ "data": ... }` หรือ `{ "error": { "co
 | GET | /merchant/shops/{id}/notifications, /merchant/shops/{id}/reviews | shop bell; reviews read only |
 | GET/PATCH | /admin/reviews, /admin/reviews/{id} | list; hide/unhide with a reason |
 | POST | /merchant/orders/{id}/complete | body: pickup_qr (token or full order number) or override_reason; payment_received + method when unpaid |
+| POST | /merchant/shops/{id}/images | upload a menu/shop picture (shop members; checked from content, redrawn by GD, D41) |
+| GET | /images/{key}, /images/{key}/thumb | redrawn JPEG (1200 px / 480 px) |
 
 Endpoints are design targets, not proof of existing implementation. Keep API naming consistent with repository if existing routes are already established.
 
@@ -399,6 +402,14 @@ q-im/
 | T25 | Website notifications and shop bell | Own only; independent of LINE; outbox untouched; bell per shop |
 | T26 | Shop statistics | Figures match their definitions (D37); shop only |
 | T27 | PromptPay confirmed by the shop | Mobile number only; QR only when READY with server amount; payment recorded once |
+| T28 | Picture upload | JPEG/PNG/WebP redrawn as new JPEG + thumbnail with a random name; judged by content, not name or type |
+| T29–T32 | Fake type or extension, too large/small, SVG, polyglot | Refused with a reason; nothing stored |
+| T33–T34 | Another shop, customer, no CSRF, over the rate limit | 404/401/403/429; another shop's upload cannot be used |
+| T35 | EXIF and comments | Removed; photo turned upright |
+| T36 | Replaced, removed, unsaved pictures | Files and row deleted when no menu or shop uses them; pending uploads limited |
+| T37 | Old orders after a menu changes | Still load; retired menu shows the drawn picture |
+| T38 | Drawn picture choice | Shop chooses or the name decides; customers do not see the choice field |
+| T39–T40 | Browser | Shop uploads/replaces/removes; every page shows a picture or drawing with alt text, no broken image |
 
 ## 16. LINE Setup Checklist (not yet verified/configured)
 

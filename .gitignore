@@ -18,6 +18,8 @@
 .DS_Store
 Thumbs.db
 
-# Demo photos stay on the presenting computer
-/public/assets/images/demo/*
-!/public/assets/images/demo/.gitkeep
+# Demo photos stay on the presenting computer (docs/demo.md); their credits list and the lock are committed
+/public/assets/demo-food/*
+!/public/assets/demo-food/.gitkeep
+!/public/assets/demo-food/.htaccess
+!/public/assets/demo-food/CREDITS.md

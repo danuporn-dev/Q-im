@@ -8,11 +8,12 @@
 4. ตั้ง HSTS ที่ web server; ถ้าอยู่หลัง reverse proxy ให้ใส่ IP ของ proxy ใน `TRUSTED_PROXY` (คั่นด้วย `,`) ระบบจึงเชื่อ `X-Forwarded-For/Host/Proto`; ไม่ตั้ง = ไม่เชื่อ header เหล่านี้ และใช้ `REMOTE_ADDR` กับ `Host`
 5. สร้าง DB user ที่มีสิทธิ์เฉพาะ database นี้ ห้ามใช้ `root`
 6. ตั้งค่า environment ตาม `.env.example` โดย `APP_ENV=production` ค่าอื่นที่ไม่ใช่ `development` ถือเป็น production เสมอ: ปิด mock login และ test hooks, cookie เป็น `Secure` (จึง login ผ่าน HTTP ธรรมดาไม่ได้)
-7. ให้ PHP เขียนได้เฉพาะ `storage/logs`, `storage/sessions`, `storage/uploads`, `storage/keys` (หรือตั้ง `PICKUP_TOKEN_KEY` ยาว 32 ตัวขึ้นไป แล้วไม่ต้องให้เขียน `storage/keys`) ห้ามแชร์หรือ commit คีย์นี้; คีย์เปลี่ยน = QR รับอาหารที่แสดงอยู่ใช้ไม่ได้ ลูกค้าเปิดหน้าออเดอร์ใหม่จะได้ QR ใหม่
+7. รูป (D41): `storage/uploads` ต้องอยู่นอก document root เสมอ, `memory_limit` อย่างน้อย 128M (รูป 24 ล้านพิกเซลใช้ราว 100 MB ตอนอ่าน) ถ้าโฮสต์ใช้ PHP-FPM แทน mod_php ค่าใน `public/.htaccess` ไม่มีผล ให้ตั้ง `upload_max_filesize = 3M` และ `post_max_size = 4M` ใน `.user.ini` หรือ php.ini และต้องเปิด extension `gd` (JPEG, PNG, WebP) กับ `fileinfo`
+8. ให้ PHP เขียนได้เฉพาะ `storage/logs`, `storage/sessions`, `storage/uploads`, `storage/keys` (หรือตั้ง `PICKUP_TOKEN_KEY` ยาว 32 ตัวขึ้นไป แล้วไม่ต้องให้เขียน `storage/keys`) ห้ามแชร์หรือ commit คีย์นี้; คีย์เปลี่ยน = QR รับอาหารที่แสดงอยู่ใช้ไม่ได้ ลูกค้าเปิดหน้าออเดอร์ใหม่จะได้ QR ใหม่
    - ถ้าไม่ตั้ง `PICKUP_TOKEN_KEY` ระบบสร้าง `storage/keys/pickup.key` เองตอนออเดอร์แรกพร้อมรับ ถ้าสร้างหรือเขียนไม่ได้: ออเดอร์ยังเปลี่ยนเป็นพร้อมรับได้ ลูกค้าเห็นข้อความ "แสดง QR รับอาหารไม่ได้ในขณะนี้" ร้านส่งมอบด้วยเลขออเดอร์ หน้า admin › ระบบ ขึ้นคำเตือนสีแดง และ `storage/logs` มีบรรทัด `[pickup] Pickup QR codes are off: ...` บอกโฟลเดอร์และวิธีแก้
-8. PromptPay: ทดสอบ QR ด้วยแอปธนาคารจริงกับยอดเล็กก่อนเปิดให้ร้านใช้ ตรวจชื่อผู้รับและยอด ระบบไม่ตรวจว่าเงินเข้า ร้านต้องยืนยันเอง
-9. รัน `php scripts/migrate.php` **ห้าม**รัน `seed.php`, `seed-demo.php`, `demo-history.php`, `e2e.php` และ `tests/` บน production (ทั้งหมดปฏิเสธเองเมื่อไม่ใช่ development)
-10. สร้างข้อมูลเริ่มต้นเอง เพราะไม่มี seed: แถว `roles` 3 แถว (`customer`, `merchant`, `admin`) และ admin คนแรก
+9. PromptPay: ทดสอบ QR ด้วยแอปธนาคารจริงกับยอดเล็กก่อนเปิดให้ร้านใช้ ตรวจชื่อผู้รับและยอด ระบบไม่ตรวจว่าเงินเข้า ร้านต้องยืนยันเอง
+10. รัน `php scripts/migrate.php` **ห้าม**รัน `seed.php`, `seed-demo.php`, `demo-history.php`, `e2e.php` และ `tests/` บน production (ทั้งหมดปฏิเสธเองเมื่อไม่ใช่ development)
+11. สร้างข้อมูลเริ่มต้นเอง เพราะไม่มี seed: แถว `roles` 3 แถว (`customer`, `merchant`, `admin`) และ admin คนแรก
 
    ```sql
    INSERT IGNORE INTO roles (name) VALUES ('customer'), ('merchant'), ('admin');
@@ -23,8 +24,8 @@
    INSERT INTO admin_accounts (user_id, login_name, password_hash) VALUES (@u, 'admin', '<hash>');
    ```
 
-11. ตั้ง LINE และ worker ตาม [line-setup.md](line-setup.md)
-12. ตั้ง log rotation ให้ `storage/logs` และกำหนดระยะเวลาเก็บข้อมูลส่วนบุคคล
+12. ตั้ง LINE และ worker ตาม [line-setup.md](line-setup.md)
+13. ตั้ง log rotation ให้ `storage/logs` และกำหนดระยะเวลาเก็บข้อมูลส่วนบุคคล
 
 ## ฐานข้อมูล: MariaDB และ MySQL
 
@@ -70,7 +71,7 @@ IPv6 นับเป็นช่วง `/64`
 - Session เป็นไฟล์ในเครื่อง ถ้าใช้หลาย web server ต้องย้ายที่เก็บ
 - ไม่มี refund, ออเดอร์หมดอายุอัตโนมัติ, การคืนสถานะ หรือสิทธิ์ย่อยของสมาชิกร้าน (ดู [decisions.md](decisions.md))
 - ไม่มี UI ให้ลูกค้าลบบัญชี/ข้อมูล และยังไม่กำหนด retention
-- รูปเก่าที่ถูกแทนที่ยังอยู่ใน `storage/uploads`
+- รูปที่อัปโหลดก่อน D41 (ไม่มีแถวใน `images`) ไม่ถูกลบเมื่อเปลี่ยนรูป และไม่มี thumbnail (ระบบส่งรูปเต็มแทน)
 - Search ใช้ `LIKE` เหมาะกับร้านหลักร้อย
 - ไม่มีเครื่องมือส่ง notification ที่ `FAILED` ซ้ำ
 - ตัวเตือนออเดอร์ค้างแสดงเฉพาะหน้า "ออเดอร์" ของร้าน และคำนวณจากนาฬิกาของเครื่องร้าน

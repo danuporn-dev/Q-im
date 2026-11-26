@@ -39,33 +39,56 @@ foreach ([['APP_ENV' => 'production'], ['APP_ENV' => 'staging'], ['SEED_DEMO_PAS
 }
 T::ok($run([]) === 1 && str_contains($out, 'demo-reset'), 'refuses to mix with the ordinary seed', $out);
 Database::run("UPDATE food_courts SET active = 0 WHERE name = 'โรงอาหารกลาง (Demo)'");
-T::eq(0, $run([]), 'seeds');
+// Demo photos (D41): one good, one PNG without a credits line, one SVG in disguise, the rest drawn pictures.
+$photos = sys_get_temp_dir() . '/qim-demo-food-' . Fixture::run();
+@mkdir($photos);
+$img = imagecreatetruecolor(900, 600);
+imagefilledrectangle($img, 100, 100, 800, 500, imagecolorallocate($img, 255, 118, 34));
+ob_start();
+imagejpeg($img, null, 85);
+$jpeg = (string) ob_get_clean();
+file_put_contents("$photos/kaphrao-mu.jpg", substr($jpeg, 0, 2) . "\xFF\xFE" . pack('n', 18) . 'Owner: SecretCam' . substr($jpeg, 2));
+imagepng($img, "$photos/shop-tamsang.png");
+file_put_contents("$photos/tom-yam.jpg", '<svg xmlns="http://www.w3.org/2000/svg"/>');
+file_put_contents("$photos/CREDITS.md", "| `kaphrao-mu.jpg` | test | ถ่ายเอง | test |\n| `tom-yam.jpg` | test | ถ่ายเอง | test |\n");
+$withPhotos = ['DEMO_FOOD_DIR' => $photos];
+T::eq(0, $run($withPhotos), 'seeds');
+T::ok(str_contains($out, 'Skipped tom-yam.jpg: ไม่รับไฟล์ SVG') && str_contains($out, 'Warning: shop-tamsang.png has no line') && str_contains($out, '2 photos'), 'photos go through the upload checks; a missing credit is reported', $out);
+$keyOf = static fn (): string => substr((string) Database::value("SELECT m.image_url FROM menus m JOIN shops s ON s.id = m.shop_id WHERE m.name = 'ข้าวกะเพราหมูสับ' AND s.name = 'ครัวป้าแดง อาหารตามสั่ง'"), 6);
+$firstKey = $keyOf();
+T::ok(strlen($firstKey) === 32, 'the photo is on its menu');
 $tables = static fn (): array => array_map(static fn ($t) => Database::value("SELECT COUNT(*) FROM $t"), ['shops', 'menus', 'menu_options', 'users', 'shop_members', 'user_roles', 'categories']);
 $first = $tables();
-T::eq(0, $run([]), 'seeds again');
+T::eq(0, $run($withPhotos), 'seeds again');
+clearstatcache();
+T::ok(strlen($keyOf()) === 32 && $keyOf() !== $firstKey && !Database::value('SELECT 1 FROM images WHERE id = ?', [$firstKey]) && !is_file(App\Services\Images::dir() . "/$firstKey.jpg"), 'pictures of the earlier run are deleted');
+array_map('unlink', glob("$photos/*") ?: []);
+@rmdir($photos);
 T::eq($first, $tables(), 'a second run adds nothing');
 $court = (int) Database::value("SELECT id FROM food_courts WHERE name = 'โรงอาหารกลาง'");
 $demo = array_column(Database::rows('SELECT id FROM shops WHERE food_court_id = ? ORDER BY id', [$court]), 'id');
 T::eq(3, count($demo), 'three shops in the central food court');
 T::eq(2, (int) Database::value("SELECT COUNT(*) FROM shops s JOIN food_courts f ON f.id = s.food_court_id WHERE f.name = 'โรงอาหารคณะวิศวกรรมศาสตร์'"), 'two shops in the second food court');
 $anon = new Client($base);
-$prod = new Client('http://127.0.0.1:8270');
 foreach ($demo as $i => $id) {
     $view = $anon->get("$a/shops/$id")['body']['data'];
     $list = $anon->get("$a/shops/$id/menus")['body']['data']['menus'];
     T::ok($view['is_open'] && $view['eta_minutes'] >= 1 && $view['eta_minutes'] <= 10 && count($list) >= 6 && count($list) <= 8, "{$view['name']}: open, sensible ETA, 6 to 8 menus", [$view['eta_minutes'], count($list)]);
     $bad = [];
     foreach ([$view, ...$list] as $x) {
-        $key = substr((string) $x['image_url'], 6);
-        $r = $anon->get("$a/images/$key");
-        if ($r['status'] !== 200 || !preg_match('#Content-Type: image/(jpeg|svg\+xml)#i', $r['head'])) {
+        if ($x['image_url'] === null) {
+            // No photo: the page draws the picture of its kind (a shop always gets the stall drawing).
+            if (isset($x['price']) && !in_array($x['art'] ?? null, App\Services\FoodArt::KINDS, true)) {
+                $bad[] = "{$x['name']}: no drawn picture";
+            }
+            continue;
+        }
+        $r = $anon->get("$a/images/" . substr((string) $x['image_url'], 6));
+        if ($r['status'] !== 200 || !str_contains($r['head'], 'image/jpeg') || str_contains($r['raw'], 'SecretCam')) {
             $bad[] = $x['name'];
         }
-        if (str_contains($r['head'], 'svg') && $prod->get("$a/images/$key")['status'] !== 404) {
-            $bad[] = 'placeholder served in production';
-        }
     }
-    T::eq([], $bad, 'every picture loads; placeholders only in development');
+    T::eq([], $bad, 'every picture loads as a redrawn JPEG, or the menu has a drawn picture');
 
     // The whole cycle with the demo data of this shop.
     $c = new Client($base);

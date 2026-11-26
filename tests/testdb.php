@@ -21,6 +21,8 @@ final class TestDb
     {
         // This process and every child process now see only the test database.
         putenv('DB_NAME=' . self::NAME);
+        // And their own picture folder, emptied with the database: uploads of qim_dev stay untouched.
+        putenv('UPLOAD_DIR=' . self::uploads());
         // Nor the presentation settings of .env. Windows drops empty variables, so each gets a value that means "off".
         foreach (['DEMO_ACCESS_CODE' => ' ', 'DEMO_PUBLIC' => 'false', 'TRUSTED_PROXY' => 'none', 'POLL_SECONDS' => '0', 'PICKUP_TOKEN_HOURS' => '12', 'PICKUP_TOKEN_KEY' => ' '] as $key => $off) {
             putenv("$key=$off");
@@ -72,6 +74,13 @@ final class TestDb
     private static function drop(): void
     {
         self::$server->exec('DROP DATABASE IF EXISTS ' . self::NAME);
+        array_map('unlink', glob(self::uploads() . '/*') ?: []);
+        @rmdir(self::uploads());
+    }
+
+    private static function uploads(): string
+    {
+        return dirname(__DIR__) . '/storage/test-uploads';
     }
 
     private static function fingerprint(): string

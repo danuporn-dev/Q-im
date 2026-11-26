@@ -1,0 +1,4 @@
+# Original demo photos, read only by scripts/seed-demo.php. The pages show the redrawn copies served by the API,
+# never these files: they may still carry camera and location data.
+Require all denied
+Options -Indexes

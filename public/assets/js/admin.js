@@ -1,13 +1,16 @@
-import { $, METHOD, STATUS, api, badge, baht, busy, confirmBox, dateTime, dialog, empty, failed, field, get, h, loading, loginForm, patch, post, queueNo, setCsrf, toast, today } from './core.js';
+import { $, METHOD, STATUS, api, badge, baht, busy, refundHelp, refundRow, confirmBox, dateTime, dialog, empty, failed, field, get, h, loading, loginForm, patch, post, queueNo, setCsrf, toast, today } from './core.js';
 
 const app = $('#app');
 let me = null;
-const TABS = [['overview', 'ภาพรวม'], ['orders', 'ออเดอร์'], ['shops', 'ร้าน'], ['courts', 'โรงอาหาร'], ['users', 'ผู้ใช้และสิทธิ์'], ['reports', 'รายงาน'], ['reviews', 'รีวิว'], ['audit', 'บันทึกการใช้งาน'], ['settings', 'ระบบ']];
+/** Online PromptPay is on (PAYMENT_MODE=gateway, D42): shows the online payments page. */
+let gateway = false;
+const TABS = [['overview', 'ภาพรวม'], ['orders', 'ออเดอร์'], ['shops', 'ร้าน'], ['courts', 'โรงอาหาร'], ['users', 'ผู้ใช้และสิทธิ์'], ['reports', 'รายงาน'], ['reviews', 'รีวิว'], ['audit', 'บันทึกการใช้งาน'], ['settings', 'ระบบ'], ['payments', 'ชำระออนไลน์']];
 
 async function start() {
   app.replaceChildren(loading());
   try {
     me = await get('/me?realm=admin');
+    gateway = (await get('/config')).payment_mode === 'gateway';
   } catch (e) {
     return app.replaceChildren(e.status === 401 ? loginForm('admin', 'เข้าสู่ระบบผู้ดูแล', start) : failed(e, start));
   }
@@ -18,7 +21,7 @@ async function start() {
 function render() {
   const tab = TABS.find(([k]) => location.hash === '#/' + k)?.[0] || 'overview';
   const main = h('main.main', {}, loading());
-  app.replaceChildren(h('div.desk', {}, h('nav.side', { 'aria-label': 'เมนูหลัก' }, h('div.brand', {}, 'Q-im'), TABS.map(([k, label]) => h('a', { href: '#/' + k, 'aria-current': k === tab ? 'page' : null }, label)),
+  app.replaceChildren(h('div.desk', {}, h('nav.side', { 'aria-label': 'เมนูหลัก' }, h('div.brand', {}, 'Q-im'), TABS.filter(([k]) => k !== 'payments' || gateway).map(([k, label]) => h('a', { href: '#/' + k, 'aria-current': k === tab ? 'page' : null }, label)),
     h('div.bottom', {}, h('button.btn.ghost', { type: 'button', onclick: (e) => busy(e.currentTarget, async () => { await post('/auth/logout?realm=admin'); location.reload(); }) }, 'ออกจากระบบ'))), main));
   const load = async () => {
     try {
@@ -170,6 +173,17 @@ async function settings(main) {
     h('h2', {}, 'การแจ้งเตือน'), ['PENDING', 'SENDING', 'SENT', 'FAILED'].map((k) => line(k, s.notifications[k] || 0)), h('p.muted', {}, 'ค่าระบบแก้ที่ไฟล์ .env บนเซิร์ฟเวอร์')));
 }
 
-const PAGES = { overview, orders, shops, courts, users, reports, reviews, audit, settings };
+/** Refunds due in every shop, and online payments that did not match their order (audited as payment.gateway_mismatch). */
+async function payments(main) {
+  const list = await get('/admin/refunds');
+  main.replaceChildren(h('h1', {}, 'ชำระออนไลน์: รอคืนเงินและรายการผิดปกติ'), refundHelp(),
+    list.length ? h('div.list', {}, list.map((r) => h('div', {}, h('div.muted', {}, r.shop.name), refundRow(r, async (note) => {
+      await post(`/admin/refunds/${r.id}/done`, { note });
+      toast('บันทึกแล้ว');
+      await payments(main);
+    })))) : empty('ไม่มีรายการ'));
+}
+
+const PAGES = { overview, orders, shops, courts, users, reports, reviews, audit, settings, payments };
 addEventListener('hashchange', () => { if (me) render(); });
 start();

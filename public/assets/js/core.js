@@ -274,3 +274,20 @@ export function loginForm(realm, title, done) {
     },
   }, h('div.brand', {}, 'Q-im'), h('h1', {}, title), field('ชื่อผู้ใช้', login), field('รหัสผ่าน', password), button));
 }
+
+// ---- Online payments to give back (D42), shared by the shop and admin pages ----
+
+export const refundHelp = () => h('p.muted', {}, 'เงินที่ลูกค้าจ่ายออนไลน์แล้วต้องคืน ระบบไม่คืนเงินให้เอง: เปิด Stripe Dashboard › Payments ค้นหารหัส Stripe ด้านล่าง แล้วกด Refund (PromptPay คืนเข้าบัญชีธนาคาร Stripe จะส่งอีเมลขอเลขบัญชีจากลูกค้า) เสร็จแล้วกด "ทำเครื่องหมายคืนเงินแล้ว"');
+
+export function refundRow(r, done) {
+  return h('div.item', {}, h('div.grow', {}, h('h3', {}, `${r.order_no} · ${baht(r.amount)}`),
+    r.problem ? h('p.notice', {}, r.problem) : null, r.reason ? h('div.muted', {}, r.reason) : null,
+    h('div', {}, 'รหัส Stripe: ', h('code', {}, r.intent_id)),
+    r.refund_due_at ? (r.refunded_at ? h('span.badge.done', {}, `คืนแล้ว ${dateTime(r.refunded_at)}`) : h('span.badge.bad', {}, `รอคืนเงิน ตั้งแต่ ${dateTime(r.refund_due_at)}`)) : null,
+    r.refund_note ? h('div.muted', {}, 'บันทึก: ', r.refund_note) : null),
+  r.refund_due_at && !r.refunded_at ? h('button.btn.ghost', { type: 'button', onclick: async (e) => {
+    const button = e.currentTarget;
+    const note = await askReason('ยืนยันว่าคืนเงินแล้ว', 'บันทึก เช่น เลขอ้างอิงการคืนเงินใน Stripe', 'คืนเงินแล้ว');
+    if (note) await busy(button, () => done(note));
+  } }, 'ทำเครื่องหมายคืนเงินแล้ว') : null);
+}

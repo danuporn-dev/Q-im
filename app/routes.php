@@ -75,6 +75,9 @@ return static function (Router $r): void {
     // Merchant: orders
     $r->add('GET', '/merchant/shops/{id}/orders', [MerchantController::class, 'orders']);
     $r->add('GET', '/merchant/orders/{id}', [MerchantController::class, 'order']);
+    // Online payments to give back by hand in the Stripe Dashboard (D42)
+    $r->add('GET', '/merchant/shops/{id}/refunds', [MerchantController::class, 'refunds']);
+    $r->add('POST', '/merchant/shops/{id}/refunds/{sub}/done', [MerchantController::class, 'refunded']);
     $r->add('POST', '/merchant/orders/{id}/payment', [MerchantController::class, 'payment']);
     $r->add('POST', '/merchant/orders/{id}/complete', [MerchantController::class, 'complete']);
     $r->add('GET', '/merchant/shops/{id}/notifications', [MerchantController::class, 'bell']);

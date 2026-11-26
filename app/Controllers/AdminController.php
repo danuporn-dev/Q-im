@@ -5,8 +5,10 @@ namespace App\Controllers;
 
 use App\Services\Admin;
 use App\Services\Auth;
+use App\Services\OnlinePayments;
 use App\Services\Reports;
 use App\Services\Reviews;
+use App\Support\Input;
 use App\Support\Request;
 use App\Support\Router;
 
@@ -30,6 +32,12 @@ final class AdminController
 
         $r->add('GET', '/admin/reviews', self::listing(static fn (Request $q, int $n, int $o): array => Reviews::all('%' . addcslashes(mb_substr($q->query('q'), 0, 100), '\\%_') . '%', (int) $q->query('shop_id'), $n, $o)));
         $r->add('PATCH', '/admin/reviews/{id}', self::write(static fn (int $me, array $in, int $id) => Reviews::setHidden($me, $id, $in)));
+        // Online payments to give back by hand, and payments that did not match their order (D42)
+        $r->add('GET', '/admin/refunds', self::read(static fn (): array => OnlinePayments::refunds(null, true)));
+        $r->add('POST', '/admin/refunds/{id}/done', self::write(static function (int $me, array $in, int $id): array {
+            OnlinePayments::markRefunded($me, $id, null, Input::optionalText($in, 'note', 'บันทึก', 300));
+            return OnlinePayments::refunds(null, true);
+        }));
 
         $r->add('POST', '/admin/food-courts', self::write(static fn (int $me, array $in): array => Admin::saveFoodCourt($me, null, $in), 201));
         $r->add('PATCH', '/admin/food-courts/{id}', self::write(static fn (int $me, array $in, int $id): array => Admin::saveFoodCourt($me, $id, $in)));

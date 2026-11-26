@@ -1,18 +1,22 @@
-import { $, METHOD, api, askReason, badge, baht, busy, changes, dateTime, dialog, empty, failed, field, get, h, loading, loginForm, patch, picture, poll, post, queueNo, setCsrf, setPoll, time, toast, today, vendor } from './core.js';
+import { $, METHOD, api, askReason, badge, refundHelp, refundRow, baht, busy, changes, dateTime, dialog, empty, failed, field, get, h, loading, loginForm, patch, picture, poll, post, queueNo, setCsrf, setPoll, time, toast, today, vendor } from './core.js';
 
 const app = $('#app');
 let me = null;
 let shopId = null;
 let stop = () => {};
 
-const TABS = [['orders', 'ออเดอร์'], ['history', 'ประวัติ'], ['menus', 'เมนู'], ['settings', 'ตั้งค่าร้าน'], ['reports', 'รายงาน'], ['reviews', 'รีวิว']];
+const TABS = [['orders', 'ออเดอร์'], ['history', 'ประวัติ'], ['menus', 'เมนู'], ['settings', 'ตั้งค่าร้าน'], ['reports', 'รายงาน'], ['reviews', 'รีวิว'], ['refunds', 'รอคืนเงิน']];
+/** Online PromptPay is on (PAYMENT_MODE=gateway, D42): shows the refunds page and the online payment labels. */
+let gateway = false;
 const current = () => TABS.find(([k]) => location.hash === '#/' + k)?.[0] || 'orders';
 
 async function start() {
   app.replaceChildren(loading());
   try {
     me = await get('/me?realm=merchant');
-    setPoll((await get('/config')).poll_seconds);
+    const config = await get('/config');
+    setPoll(config.poll_seconds);
+    gateway = config.payment_mode === 'gateway';
   } catch (e) {
     if (e.status !== 401) return app.replaceChildren(failed(e, start));
     return app.replaceChildren(loginForm('merchant', 'เข้าสู่ระบบร้านค้า', start));
@@ -35,9 +39,9 @@ function render() {
     : h('strong', {}, me.shops[0].name);
   app.replaceChildren(h('div.desk.shopdesk', {}, h('nav.side', { 'aria-label': 'เมนูหลัก' }, h('div.brand', {}, 'Q-im'), picker,
     h('div.bellbox', {}, bellCount, soundButton),
-    TABS.map(([k, label]) => h('a', { href: '#/' + k, 'aria-current': k === tab ? 'page' : null }, label)), h('div.bottom', {}, logoutButton())), main));
+    TABS.filter(([k]) => k !== 'refunds' || gateway).map(([k, label]) => h('a', { href: '#/' + k, 'aria-current': k === tab ? 'page' : null }, label)), h('div.bottom', {}, logoutButton())), main));
   watchBell();
-  const page = { orders, history, menus, settings, reports, reviews }[tab];
+  const page = { orders, history, menus, settings, reports, reviews, refunds }[tab];
   const load = async () => {
     try {
       await page(main);
@@ -156,7 +160,9 @@ function card(o, refresh, shop) {
     if (reason) await act(action, { reason })({ currentTarget: target });
   };
   const waited = Math.floor((Date.now() - new Date(o.created_at)) / 60000);
-  const cooking = () => [button('อาหารพร้อม', act('ready')), button('ยกเลิก', reasoned('cancel', 'ยกเลิกออเดอร์ที่กำลังทำ', 'ยกเลิกออเดอร์', ['วัตถุดิบหมด', 'อุปกรณ์ขัดข้อง', 'ลูกค้าขอยกเลิก']), '.danger.ghost')];
+  const online = o.payment_method === 'STRIPE_PROMPTPAY';
+  const paidOnline = online && o.payment_status === 'PAID';
+  const cooking = () => [button('อาหารพร้อม', act('ready')), button('ยกเลิก', reasoned('cancel', paidOnline ? 'ลูกค้าจ่ายออนไลน์แล้ว: ยกเลิกแล้วต้องคืนเงินเองใน Stripe Dashboard (ดูหน้ารอคืนเงิน)' : 'ยกเลิกออเดอร์ที่กำลังทำ', 'ยกเลิกออเดอร์', ['วัตถุดิบหมด', 'อุปกรณ์ขัดข้อง', 'ลูกค้าขอยกเลิก']), '.danger.ghost')];
   const buttons = {
     PENDING: () => [button('รับออเดอร์', act('accept')), button('ปฏิเสธ', reasoned('reject', 'ปฏิเสธออเดอร์', 'ปฏิเสธ', ['วัตถุดิบหมด', 'ร้านกำลังจะปิด', 'ออเดอร์เต็ม']), '.danger.ghost')],
     ACCEPTED: cooking,
@@ -172,7 +178,10 @@ function card(o, refresh, shop) {
     late ? h('p.notice', {}, o.status === 'PENDING' ? `รอยืนยันมา ${waited} นาที` : `พร้อมรับมา ${readyFor} นาที กรุณาตรวจสอบ`) : null,
     lines(o),
     h('div.row.between', {}, h('span.muted', {}, o.order_no), h('b.price', {}, baht(o.total))),
-    o.status === 'READY' ? h('p', {}, o.payment_status === 'PAID' ? `✓ ชำระแล้ว · ${METHOD[o.payment_method]}` : byTransfer ? 'ยังไม่ชำระ · ลูกค้าเลือก PromptPay' : 'ยังไม่ชำระ') : (byTransfer ? h('p.muted', {}, 'ลูกค้าเลือก PromptPay') : null),
+    paidOnline ? h('p', {}, h('span.badge.ready', {}, '✓ ชำระแล้วออนไลน์'), ' ไม่ต้องเก็บเงิน')
+      : online ? h('p.muted', {}, 'ลูกค้าเลือกจ่ายออนไลน์ · ยังไม่ชำระ', o.status === 'READY' ? ' (รับเงินสดแทนได้)' : '')
+      : o.status === 'READY' ? h('p', {}, o.payment_status === 'PAID' ? `✓ ชำระแล้ว · ${METHOD[o.payment_method]}` : byTransfer ? 'ยังไม่ชำระ · ลูกค้าเลือก PromptPay' : 'ยังไม่ชำระ') : (byTransfer ? h('p.muted', {}, 'ลูกค้าเลือก PromptPay') : null),
+    o.refund_due ? h('p', {}, h('span.badge.bad', {}, 'รอคืนเงิน'), ' ดูหน้ารอคืนเงิน') : null,
     h('div.row', {}, buttons));
 }
 
@@ -352,6 +361,18 @@ async function reviews(main, page = 1) {
     h('p.muted', {}, 'ดูได้อย่างเดียว ไม่แสดงผู้เขียน หากรีวิวไม่เหมาะสมกรุณาแจ้งผู้ดูแล'),
     data.length ? h('div.list', {}, data.map((r) => h('article.card', {}, h('div.row.between', {}, h('b', {}, '★'.repeat(r.rating) + '☆'.repeat(5 - r.rating)), h('span.muted', {}, r.date)), r.comment ? h('p', {}, r.comment) : null))) : '',
     h('div.row.end', {}, h('button.btn.ghost', { type: 'button', disabled: page <= 1, onclick: () => reviews(main, page - 1) }, 'ก่อนหน้า'), `หน้า ${page} / ${pages}`, h('button.btn.ghost', { type: 'button', disabled: page >= pages, onclick: () => reviews(main, page + 1) }, 'ถัดไป')));
+}
+
+// ---- Refunds (D42) -------------------------------------------------------------
+
+/** Online payments to give back. The system only records it: the money goes back in the Stripe Dashboard. */
+async function refunds(main) {
+  const list = await get(`/merchant/shops/${shopId}/refunds`);
+  main.replaceChildren(h('h1', {}, 'รอคืนเงิน'), refundHelp(), list.length ? h('div.list', {}, list.map((r) => refundRow(r, async (note) => {
+    await post(`/merchant/shops/${shopId}/refunds/${r.id}/done`, { note });
+    toast('บันทึกแล้ว');
+    await refunds(main);
+  }))) : empty('ไม่มีรายการรอคืนเงิน'));
 }
 
 // ---- Menus ------------------------------------------------------------------

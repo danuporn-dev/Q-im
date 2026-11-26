@@ -182,7 +182,8 @@ final class Orders
             ? ["o.shop_id = ? AND o.status IN ('COMPLETED','REJECTED','CANCELLED')", 'o.id DESC']
             : ['o.shop_id = ? AND o.status IN ' . self::ACTIVE, 'q.business_date, q.queue_number, o.id'];
         [$rows, $total] = self::page($where, [$shopId], $sort, $limit, $offset);
-        return [array_map([self::class, 'forMerchant'], $rows), $total];
+        $due = OnlinePayments::refundDueOrders(array_column($rows, 'id'));
+        return [array_map(static fn (array $o): array => self::forMerchant($o) + (isset($due[(int) $o['id']]) ? ['refund_due' => true] : []), $rows), $total];
     }
 
     public static function shopOrder(int $orderId): array

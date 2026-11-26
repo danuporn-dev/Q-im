@@ -8,11 +8,13 @@ use App\Services\Auth;
 use App\Services\Catalog;
 use App\Services\Images;
 use App\Services\Inbox;
+use App\Services\OnlinePayments;
 use App\Services\OrderFlow;
 use App\Services\Orders;
 use App\Services\Reports;
 use App\Services\Reviews;
 use App\Services\ShopAdmin;
+use App\Support\Input;
 use App\Support\RateLimiter;
 use App\Support\Request;
 
@@ -131,6 +133,19 @@ final class MerchantController
         $key = Images::upload($_FILES['image'] ?? null, $shopId, $user['id']);
         Audit::log($user['id'], 'image.upload', 'shop', $shopId, ['image' => $key]);
         return [['image_url' => "image:$key"], 201];
+    }
+
+    public static function refunds(Request $q, int $shopId): array
+    {
+        self::member($q, $shopId);
+        return [OnlinePayments::refunds($shopId), 200];
+    }
+
+    public static function refunded(Request $q, int $shopId, int $id): array
+    {
+        $user = self::member($q, $shopId);
+        OnlinePayments::markRefunded($user['id'], $id, $shopId, Input::optionalText($q->json(), 'note', 'บันทึก', 300));
+        return [OnlinePayments::refunds($shopId), 200];
     }
 
     private static function member(Request $q, int $shopId): array

@@ -297,6 +297,64 @@ final class OnlinePayments
         }
     }
 
+    /**
+     * Money that must go back to customers (refund due), newest first; with $problems also payments that did not
+     * match their order. A shop sees only its own; the order number is masked as on the shop's board.
+     */
+    public static function refunds(?int $shopId, bool $problems = false): array
+    {
+        $where = $problems ? '(pi.refund_due_at IS NOT NULL OR pi.problem IS NOT NULL)' : 'pi.refund_due_at IS NOT NULL';
+        $rows = Database::rows(
+            "SELECT pi.id, pi.order_id, o.public_order_no, s.id AS shop_id, s.name AS shop_name, pi.intent_id, pi.amount, pi.currency, pi.refund_reason, pi.problem,
+                    pi.refund_due_at, pi.refunded_at, pi.refund_note, pi.created_at
+             FROM payment_intents pi JOIN orders o ON o.id = pi.order_id JOIN shops s ON s.id = o.shop_id
+             WHERE $where" . ($shopId === null ? '' : ' AND o.shop_id = ?') . ' ORDER BY pi.refunded_at IS NULL DESC, COALESCE(pi.refund_due_at, pi.created_at) DESC LIMIT 200',
+            $shopId === null ? [] : [$shopId]
+        );
+        return array_map(static fn (array $r): array => [
+            'id' => (int) $r['id'], 'order_id' => (int) $r['order_id'],
+            'order_no' => $shopId === null ? $r['public_order_no'] : substr($r['public_order_no'], 0, -4) . '••••',
+            'shop' => ['id' => (int) $r['shop_id'], 'name' => $r['shop_name']], 'intent_id' => $r['intent_id'],
+            'amount' => Money::fromSatang((int) $r['amount']), 'currency' => $r['currency'], 'reason' => $r['refund_reason'], 'problem' => $r['problem'],
+            'refund_due_at' => Clock::iso($r['refund_due_at']), 'refunded_at' => Clock::iso($r['refunded_at']), 'refund_note' => $r['refund_note'],
+        ], $rows);
+    }
+
+    /** The shop or the admin returned the money in the Stripe Dashboard; the system only records that (no refund API). */
+    public static function markRefunded(int $actorId, int $rowId, ?int $shopId, ?string $note): void
+    {
+        Database::tx(static function () use ($actorId, $rowId, $shopId, $note): void {
+            $orderId = Database::value('SELECT pi.order_id FROM payment_intents pi JOIN orders o ON o.id = pi.order_id WHERE pi.id = ?' . ($shopId === null ? '' : ' AND o.shop_id = ?'), $shopId === null ? [$rowId] : [$rowId, $shopId]);
+            if (!$orderId) {
+                throw HttpError::notFound('ไม่พบรายการ');
+            }
+            $order = Database::row('SELECT id, status FROM orders WHERE id = ? FOR UPDATE', [$orderId]);
+            $row = Database::row('SELECT id, refund_due_at, refunded_at FROM payment_intents WHERE id = ? FOR UPDATE', [$rowId]);
+            if ($row['refunded_at'] !== null) {
+                return;
+            }
+            if ($row['refund_due_at'] === null) {
+                throw HttpError::conflict('NOT_REFUND_DUE', 'รายการนี้ไม่ได้รอคืนเงิน');
+            }
+            Database::run('UPDATE payment_intents SET refunded_at = ?, refunded_by = ?, refund_note = ? WHERE id = ?', [Clock::now(), $actorId, $note, $rowId]);
+            // The online payment of a cancelled order went back: it is REFUNDED (D42); cash payments are untouched.
+            if ($order['status'] === 'CANCELLED') {
+                Database::run("UPDATE payments SET status = 'REFUNDED' WHERE order_id = ? AND status = 'PAID' AND method = ?", [$orderId, self::METHOD]);
+            }
+            Audit::log($actorId, 'payment.refunded', 'order', (int) $orderId, ['note' => $note]);
+        });
+    }
+
+    /** For the shop's board: orders with online money still to return. @return array<int, true> */
+    public static function refundDueOrders(array $orderIds): array
+    {
+        if ($orderIds === []) {
+            return [];
+        }
+        $in = implode(',', array_map('intval', $orderIds));
+        return array_fill_keys(array_map('intval', array_column(Database::rows("SELECT DISTINCT order_id FROM payment_intents WHERE order_id IN ($in) AND refund_due_at IS NOT NULL AND refunded_at IS NULL"), 'order_id')), true);
+    }
+
     private static function refundDue(int $rowId, int $orderId, string $reason, ?int $actorId): void
     {
         Database::run('UPDATE payment_intents SET refund_due_at = ?, refund_reason = ? WHERE id = ?', [Clock::now(), mb_substr($reason, 0, 300), $rowId]);

@@ -33,7 +33,7 @@ function render() {
   const picker = me.shops.length > 1
     ? h('select', { 'aria-label': 'เลือกร้าน', onchange: (e) => { shopId = Number(e.target.value); render(); } }, me.shops.map((s) => h('option', { value: s.id, selected: s.id === shopId }, s.name)))
     : h('strong', {}, me.shops[0].name);
-  app.replaceChildren(h('div.desk', {}, h('nav.side', { 'aria-label': 'เมนูหลัก' }, h('div.brand', {}, 'Q-im'), picker,
+  app.replaceChildren(h('div.desk.shopdesk', {}, h('nav.side', { 'aria-label': 'เมนูหลัก' }, h('div.brand', {}, 'Q-im'), picker,
     h('div.bellbox', {}, bellCount, soundButton),
     TABS.map(([k, label]) => h('a', { href: '#/' + k, 'aria-current': k === tab ? 'page' : null }, label)), h('div.bottom', {}, logoutButton())), main));
   watchBell();

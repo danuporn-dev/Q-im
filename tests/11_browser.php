@@ -42,7 +42,7 @@ try {
     T::ok($b->sees('QR รับอาหารจะแสดงเมื่ออาหารพร้อม') && $b->sees('เลขออเดอร์'), 'tracking page after checkout');
     T::eq(1, (int) Database::value('SELECT COUNT(*) FROM orders WHERE shop_id = ?', [$s['shop']]), 'triple click makes one order');
     $order = (int) Database::value('SELECT id FROM orders WHERE shop_id = ?', [$s['shop']]);
-    $b->send('Page.reload');
+    $b->reload();
     T::ok($b->sees('รอร้านยืนยัน'), 'order restored after reload');
 
     foreach ([320, 390, 768, 1280, 1920] as $width) {

@@ -83,7 +83,7 @@ try {
     $b->js("{const s=document.querySelector('select[name=food_court]');s.value='$court';s.dispatchEvent(new Event('change'));}");
     T::ok($b->until("document.querySelectorAll('.list a.item').length===2") && $b->sees('ความหนาแน่นปานกลาง'), 'two shops of the court, with a text level');
     $b->open("$base/customer/#/");
-    $b->send('Page.reload');
+    $b->reload();
     T::ok($b->until("document.querySelector('select[name=food_court]')?.value==='$court' && document.querySelectorAll('.list a.item').length===2"), 'the choice is remembered');
     foreach (['privacy' => 'ข้อมูลที่ระบบเก็บ', 'faq' => 'ต้องจองคิวไหม', 'about' => 'คิวอิ่ม'] as $page => $text) {
         $b->open("$base/customer/#/$page");

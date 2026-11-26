@@ -137,10 +137,29 @@ final class Browser
         return $r['result']['value'] ?? null;
     }
 
+    /**
+     * Loads $url and returns once that document has loaded. Going from about:blank to an http page makes Chrome
+     * swap the renderer process; Page.navigate answers before the swap ends, and a command sent in between, such
+     * as Page.reload, fails with "Not attached to an active page" (D39).
+     */
     public function open(string $url): void
     {
         $this->send('Page.navigate', ['url' => 'about:blank']);
         $this->send('Page.navigate', ['url' => $url]);
+        $target = json_encode(explode('#', $url)[0]);
+        if (!$this->until("location.href.split('#')[0] === $target && document.readyState === 'complete'", 30)) {
+            throw new RuntimeException("$url did not finish loading");
+        }
+    }
+
+    /** Reloads and returns once the new document has loaded, not the old one. */
+    public function reload(): void
+    {
+        $this->js('window.qimBeforeReload = true');
+        $this->send('Page.reload');
+        if (!$this->until("!window.qimBeforeReload && document.readyState === 'complete'", 30)) {
+            throw new RuntimeException('the page did not finish reloading');
+        }
     }
 
     public function size(int $width, int $height = 800): void

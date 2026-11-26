@@ -113,7 +113,7 @@ try {
     $b->sees('ยอดขาย');
     sleep(14);
     T::eq(1, $b->js('window.toasts'), 'the same order is announced once');
-    $b->send('Page.reload');
+    $b->reload();
     T::ok($b->sees('ออเดอร์ใหม่ 1') && !$b->sees('มีออเดอร์ใหม่', 8), 'not announced again after a reload');
     T::eq([], $b->errors, 'no script errors or CSP violations');
 } finally {

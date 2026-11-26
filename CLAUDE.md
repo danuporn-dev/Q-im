@@ -44,7 +44,7 @@
 
 ### Extensions (ทำเมื่อผู้ใช้สั่งหรือ MVP ผ่านแล้ว)
 - PromptPay QR ที่ตรวจสอบการชำระเงินจริงได้, โปรโมชัน, รายการโปรด, รีวิว
-- หลายสาขา, สั่งตามช่วงเวลา, จอแสดงคิว, รายงานขั้นสูง, smart recommendation, QR pickup
+- หลายสาขา, สั่งตามช่วงเวลา, จอแสดงคิว, รายงานขั้นสูง, smart recommendation
 - ไม่มี delivery, rider, ค่าจัดส่ง หรือ GPS tracking ในขอบเขตปัจจุบัน
 
 ## 4. Actors & Access Control
@@ -115,15 +115,15 @@ Login → ตรวจภาพรวมโรงอาหาร → อนุ�
 PENDING -> ACCEPTED -> PREPARING -> READY -> COMPLETED
 PENDING -> REJECTED (merchant)
 PENDING -> CANCELLED (customer or authorized merchant)
-ACCEPTED -> CANCELLED (merchant, reason required)
-PREPARING -> CANCELLED (merchant exception only, reason required)
+ACCEPTED -> CANCELLED (merchant, reason required; orders accepted before D31 only)
+PREPARING -> CANCELLED (merchant, reason required; the normal cancellation after acceptance since D31)
 READY -> CANCELLED (merchant no-show only: UNPAID, minimum wait passed, reason required)
 ```
 
 - COMPLETED, CANCELLED, REJECTED เป็น terminal states; READY ที่ไม่ได้รับนานให้แจ้งร้านตรวจสอบ ไม่ auto-cancel หรือทิ้งอาหารโดยไม่มีนโยบายที่ได้รับอนุมัติ
 - No-show (อนุมัติแล้ว): สมาชิกร้านยกเลิก READY เองได้เมื่อ payment ยัง UNPAID, พร้อมรับครบเวลาขั้นต่ำเท่าตัวเตือน READY (`READY_ALERT_MINUTES` ค่าเริ่มต้น 20) และใส่เหตุผล; ตรวจแบบ atomic, บันทึก order_status_logs และ audit_logs; PAID แล้วห้ามยกเลิก; ระบบไม่ยกเลิกให้เอง
 - ห้ามย้อนสถานะโดยไม่มี workflow ที่อนุมัติ; ทุก transition ตรวจสิทธิ์และ current state ที่ backend พร้อมบันทึก actor, timestamp, reason
-- ACCEPTED = รับแล้ว/ออกคิว (ตั้งแต่ D31 ผ่านไป PREPARING ทันทีใน transaction เดียว ยัง log ไว้); PREPARING = อยู่ในครัว (คิวก่อนหน้าคิดจาก FIFO + capacity); READY = พร้อมรับ; COMPLETED = รับแล้ว
+- ACCEPTED = รับแล้ว/ออกคิว (ตั้งแต่ D31 ผ่านไป PREPARING ทันทีใน transaction เดียว ยัง log ไว้); PREPARING = รับแล้ว อยู่ในครัวหรือรอช่องทำอาหาร (ช่อง = capacity, ได้ช่องตาม FIFO และบันทึกเวลาใน `cooking_started_at` ตาม D32); READY = พร้อมรับ; COMPLETED = รับแล้ว
 - Queue status เป็นผลจาก order status; ไม่ให้สองแหล่งข้อมูลเปลี่ยนแยกกันจนขัดแย้ง
 - Payment status แยกจาก order: UNPAID / PAID / REFUNDED (เมื่อรองรับ refund) และ payment method PAY_AT_STORE; ออเดอร์ COMPLETED ต้อง PAID สำหรับ MVP
 - ร้านที่ปิดรับออเดอร์หรือเมนูหมดต้องไม่รับ checkout ใหม่ แต่ยังจัดการออเดอร์เดิมได้
@@ -135,7 +135,7 @@ READY -> CANCELLED (merchant no-show only: UNPAID, minimum wait passed, reason r
 - ใช้ unique(shop_id, business_date, queue_number) และ counter row ที่ lock ด้วย transaction / SELECT ... FOR UPDATE; ห้ามใช้ MAX()+1 โดยไม่มี concurrency protection
 - หนึ่ง order มีคิวเดียว; เลขแสดงผล Q-001 พร้อมชื่อร้าน/วันที่; order ID เป็น identifier แยกต่างหาก
 - จำนวนคิวก่อนหน้า: นับออเดอร์ที่ยังรอหรือกำลังทำและมีลำดับก่อนหน้าในร้านเดียวกัน ไม่ใช่เอาเลขคิวมาลบกัน
-- ETA เบื้องต้น = งานที่ยังค้างโดยประมาณ / capacity ที่ร้านตั้งค่า + เวลาทำออเดอร์ของลูกค้า; พิจารณาจำนวนเมนูและเวลาทำเฉลี่ยจริงเมื่อมีข้อมูล
+- ETA เบื้องต้น = งานที่ยังค้างโดยประมาณ / capacity ที่ร้านตั้งค่า + เวลาทำออเดอร์ของลูกค้า; พิจารณาจำนวนเมนูและเวลาทำเฉลี่ยจริงเมื่อมีข้อมูล; นับถอยหลังและวัดเวลาทำจริงจากเวลาที่ได้ช่องทำอาหาร ไม่รวมเวลารอช่อง (D32)
 - ETA เป็นค่าประมาณไม่ใช่คำรับประกัน; ไม่แสดงค่าติดลบ; READY แสดงพร้อมรับแทนเวลารอ; ไม่มีข้อมูลให้แสดงว่ายังประเมินไม่ได้
 - จำกัดการรับออเดอร์ตาม capacity ที่ร้านกำหนด; ไม่กำหนดเวลาหมดอายุหรือจำนวน active orders แบบตายตัวโดยไม่แจ้งผู้ใช้
 
@@ -163,7 +163,7 @@ Mobile-first, modern food ordering, Thai-first, สีหลักเขีย�
 Bottom navigation: หน้าหลัก / ค้นหา / ออเดอร์ / โปรไฟล์; cart badge และ sticky checkout CTA เมื่อเหมาะสม
 
 ### Merchant screens
-Dashboard / Kanban (ใหม่, รอทำ, กำลังทำ, พร้อมรับ, เสร็จสิ้น), order detail, menu & options CRUD, shop settings, payment/pickup confirmation, reports. รองรับจอ tablet/desktop และ mobile. ปุ่ม transition ต้องทำงานจริง ไม่ใช่ UI mock เท่านั้น
+Dashboard / Kanban 3 คอลัมน์ (ใหม่, กำลังทำ, พร้อมรับ; ที่เสร็จแล้วอยู่ในหน้าประวัติ), order detail, menu & options CRUD, shop settings, pickup confirmation (สแกน QR แล้วกด "ได้รับเงินแล้ว" เป็นอีกขั้นที่ร้านกดเอง), reports. รองรับจอ tablet/desktop และ mobile. ปุ่ม transition ต้องทำงานจริง ไม่ใช่ UI mock เท่านั้น
 
 ### Admin screens
 Overview, food courts, shops, merchant accounts and membership, users/roles, orders monitor, reports, audit logs, settings. Responsive sidebar และตารางพร้อม search/filter/pagination
@@ -342,7 +342,7 @@ q-im/
 | 7 | LINE integration, Rich Menu deep links, notification outbox/retry; test using configured channels |
 | 8 | Admin dashboard, basic analytics, audit logs |
 | 9 | Security, concurrency, responsive testing, deployment and setup documentation |
-| Later | Optional QR pickup, online payment, reviews, favorites, promotions, multi-site enhancements |
+| Later | Single-use QR pickup token, online payment, reviews, favorites, promotions, multi-site enhancements |
 
 สามารถเริ่มทดสอบด้วย local mock identity เฉพาะ development ที่แยกอย่างชัดเจนและปิดใน production; LINE integration ต้องทดสอบจริงก่อนประกาศว่า flow ผ่าน LINE ใช้งานได้ครบ
 

@@ -247,6 +247,12 @@ h2.section { font-size: 1.15rem; font-weight: 500; margin: .4rem 0 .5rem; }
 .etabox span { font-size: .8rem; }
 .ticket + .card, .ticket + section { margin-top: -.6rem; position: relative; border-radius: var(--r-lg) var(--r-lg) var(--radius) var(--radius); }
 
+/* Picture field of the menu and shop forms: a fixed 4:3 frame, so the dialog does not jump while loading */
+.imagebox { margin-bottom: .5rem; }
+.preview { display: block; width: 240px; max-width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius); background: var(--tint); }
+.imagefield .row { flex-wrap: wrap; gap: .4rem .8rem; }
+.imagefield [hidden] { display: none; }
+
 /* Merchant and admin */
 .bars { display: grid; gap: .35rem; margin-bottom: 1rem; }
 .bar { display: grid; grid-template-columns: 3.5rem 1fr 3rem; gap: .6rem; align-items: center; }

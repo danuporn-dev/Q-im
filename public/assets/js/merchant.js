@@ -390,11 +390,43 @@ async function upload(file) {
   return (await post(`/merchant/shops/${shopId}/images`, form)).image_url;
 }
 
-function imageField(initial, name) {
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+/** Drawn pictures a shop can choose for a menu without a photo (FoodArt::KINDS). */
+const ART = { rice: 'ข้าว', noodle: 'เส้น', fried: 'ของทอด', drink: 'เครื่องดื่ม', dessert: 'ของหวาน', other: 'อื่น ๆ' };
+
+/** Picture of a menu or the shop: upload, preview, remove. Nothing changes until the form is saved. */
+function imageField(initial, name, art) {
   let url = initial;
-  const preview = h('div', {}, picture(url, name));
-  const input = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', onchange: () => busy(input, async () => { if (input.files[0]) { url = await upload(input.files[0]); preview.replaceChildren(picture(url, name)); } }) });
-  return { el: h('div.field', {}, preview, field('รูปภาพ', input, 'JPEG, PNG หรือ WebP ไม่เกิน 5 MB')), get: () => url };
+  const preview = h('div.imagebox');
+  const status = h('small.muted', { 'aria-live': 'polite' });
+  const remove = h('button.btn.danger.ghost', { type: 'button', onclick: () => { url = null; status.textContent = 'จะเอารูปออกเมื่อกดบันทึก'; draw(); } }, 'เอารูปออก');
+  const draw = () => {
+    preview.replaceChildren(picture(url, name(), 'preview', art()));
+    remove.hidden = !url;
+  };
+  const input = h('input', { type: 'file', name: 'image', accept: 'image/jpeg,image/png,image/webp', onchange: () => busy(input, async () => {
+    const file = input.files[0];
+    if (!file) return;
+    // Only a quick message; the server judges the file from its content.
+    if (file.size > MAX_IMAGE_BYTES) {
+      status.textContent = 'รูปต้องมีขนาดไม่เกิน 3 MB';
+      input.value = '';
+      return;
+    }
+    status.textContent = 'กำลังอัปโหลด…';
+    try {
+      url = await upload(file);
+      status.textContent = 'อัปโหลดแล้ว กดบันทึกเพื่อใช้รูปนี้';
+      draw();
+    } catch (e) {
+      status.textContent = e.message || 'อัปโหลดรูปไม่สำเร็จ';
+      throw e;
+    } finally {
+      input.value = '';
+    }
+  }) });
+  draw();
+  return { el: h('div.field.imagefield', {}, preview, field('รูปภาพ', input, 'JPEG, PNG หรือ WebP ไม่เกิน 3 MB ด้านสั้นอย่างน้อย 200 px ระบบย่อรูปให้ และลบข้อมูลกล้อง/ตำแหน่งที่ถ่ายออก'), h('div.row', {}, remove, status)), get: () => url, redraw: draw };
 }
 
 async function editMenu(menu, categories, reload) {
@@ -405,7 +437,9 @@ async function editMenu(menu, categories, reload) {
     const category = h('select', {}, h('option', { value: '' }, 'ไม่มีหมวดหมู่'), categories.map((c) => h('option', { value: c.id, selected: c.id === menu?.category_id }, c.name)));
     const description = h('textarea', { rows: 2, maxlength: 2000, value: menu?.description || '' });
     const active = h('input', { type: 'checkbox', checked: menu ? menu.active : true });
-    const image = imageField(menu?.image_url ?? null, menu?.name || 'เมนู');
+    const art = h('select', { name: 'art', onchange: () => image.redraw() }, h('option', { value: '' }, 'เลือกให้จากชื่อเมนู'), Object.entries(ART).map(([value, label]) => h('option', { value, selected: menu?.art_choice === value }, label)));
+    const image = imageField(menu?.image_url ?? null, () => name.value || 'เมนู', () => art.value || (menu && name.value === menu.name ? menu.art : 'other'));
+    name.addEventListener('change', () => image.redraw());
     const groupBox = h('div');
     const groups = (menu?.option_groups || []).filter((g) => g.active).map((g) => ({ ...g, options: g.options.filter((o) => o.active).map((o) => ({ ...o })) }));
     const drawGroups = () => groupBox.replaceChildren(...groups.map((g, gi) => h('fieldset', {}, h('legend', {}, 'กลุ่มตัวเลือก'),
@@ -416,11 +450,11 @@ async function editMenu(menu, categories, reload) {
     drawGroups();
     const button = h('button.btn', { type: 'submit' }, 'บันทึก');
     return h('form', { onsubmit: (e) => { e.preventDefault(); busy(button, async () => {
-      const body = { name: name.value, price: price.value, prep_minutes: prep.value === '' ? null : Number(prep.value), category_id: category.value === '' ? null : Number(category.value), description: description.value, image_url: image.get(), active: active.checked,
+      const body = { name: name.value, price: price.value, prep_minutes: prep.value === '' ? null : Number(prep.value), category_id: category.value === '' ? null : Number(category.value), description: description.value, image_url: image.get(), art: art.value || null, active: active.checked,
         option_groups: groups.map((g) => ({ id: g.id, name: g.name, min_select: g.min_select, max_select: g.max_select, options: g.options.map((o) => ({ id: o.id, name: o.name, price_delta: String(o.price_delta) })) })) };
       await (menu ? patch(`/merchant/menus/${menu.id}`, body) : post(`/merchant/shops/${shopId}/menus`, body));
       close(true);
-    }); } }, field('ชื่อเมนู', name), h('div.row', {}, h('div.grow', {}, field('ราคา (บาท)', price)), h('div.grow', {}, field('เวลาทำ (นาที)', prep))), field('หมวดหมู่', category), field('รายละเอียด', description), image.el, groupBox,
+    }); } }, field('ชื่อเมนู', name), h('div.row', {}, h('div.grow', {}, field('ราคา (บาท)', price)), h('div.grow', {}, field('เวลาทำ (นาที)', prep))), field('หมวดหมู่', category), field('รายละเอียด', description), image.el, field('ภาพวาดเมื่อไม่มีรูป', art), groupBox,
     h('button.btn.ghost', { type: 'button', onclick: () => { groups.push({ name: '', min_select: 0, max_select: 1, options: [{ name: '', price_delta: '0' }] }); drawGroups(); } }, 'เพิ่มกลุ่มตัวเลือก'),
     h('label.check', {}, active, 'ขายเมนูนี้'), h('div.row.end', {}, button));
   });
@@ -439,7 +473,7 @@ async function settings(main) {
   const capacity = number(s.capacity, 100);
   const avg = number(s.avg_prep_minutes, 240);
   const max = number(s.max_active_orders, 1000);
-  const image = imageField(s.image_url, s.name);
+  const image = imageField(s.image_url, () => name.value || s.name, () => 'shop');
   const promptPhone = h('input', { name: 'promptpay_phone', inputmode: 'tel', maxlength: 20, value: s.promptpay_phone || '', placeholder: '08XXXXXXXX' });
   const promptOn = h('input', { type: 'checkbox', name: 'promptpay_enabled', checked: s.promptpay_enabled });
   const hours = s.hours.map((x) => ({ ...x }));

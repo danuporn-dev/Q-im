@@ -85,4 +85,6 @@ C:\xampp\php\php.exe -S localhost:8000 -t public
 
 เปิด `http://qim.localhost/` ถ้า browser หาไม่เจอ ให้เพิ่ม `127.0.0.1 qim.localhost` ใน `C:\Windows\System32\drivers\etc\hosts` (สิทธิ์ Administrator)
 
-โปรเจกต์อยู่ใต้ `htdocs` จึงมี `.htaccess` ที่ root ปิด `http://localhost/Q-im/` ทุกไฟล์ และ `public/.htaccess` เปิดเฉพาะ `public/` เป็นแนวป้องกันเสริม ไม่ใช่สิ่งทดแทนการตั้ง document root
+โปรเจกต์อยู่ใต้ `htdocs` จึงมี `.htaccess` ที่ root ปิดทุกไฟล์นอก `public/` ยกเว้นที่อยู่โฟลเดอร์ `http://localhost/Q-im/` ซึ่ง redirect ไปหน้าเลือก role `public/start.html` (ให้หน้า "Index of /" ของ XAMPP แสดงและคลิกเข้าได้) และ `public/.htaccess` เปิดเฉพาะ `public/` เป็นแนวป้องกันเสริม ไม่ใช่สิ่งทดแทนการตั้ง document root
+
+เปิดผ่าน Apache ใน htdocs ได้โดยไม่ต้องตั้ง VirtualHost: `http://localhost/Q-im/public/customer/`, `.../merchant/`, `.../admin/` (เปิด Apache และ MySQL ใน XAMPP Control Panel ก่อน)

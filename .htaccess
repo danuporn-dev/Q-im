@@ -1,2 +1,10 @@
 # The project sits inside htdocs: block every file outside public/ (.env, .git, config, ...).
 Require all denied
+
+# Only the folder address itself (http://localhost/Q-im/) is open, so the htdocs listing shows the
+# folder and a click lands on the role picker. It serves nothing: it is redirected to public/start.html.
+<If "%{REQUEST_URI} =~ m#/q-im/?$#i">
+    Require all granted
+</If>
+Options -Indexes
+RedirectMatch 302 (?i)^(.*/q-im)/?$ $1/public/start.html

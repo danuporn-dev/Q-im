@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Q-im เลือกหน้า</title>
+<link rel="icon" href="assets/icon.svg">
+<link rel="stylesheet" href="assets/css/app.css?v=3">
+</head>
+<body>
+<!-- Entry from http://localhost/Q-im/ (see ../.htaccess). Links only: each page still asks for its own login. -->
+<main class="login">
+  <div class="card">
+    <div class="brand">Q-im</div>
+    <h1>เข้าใช้งานในฐานะ</h1>
+    <nav class="roles" aria-label="เลือกหน้า">
+      <a class="role" href="customer/"><b>ลูกค้า</b><span class="muted">สั่งอาหาร ติดตามคิว แสดง QR รับอาหาร</span></a>
+      <a class="role" href="merchant/"><b>ร้านค้า</b><span class="muted">รับออเดอร์ อาหารพร้อม สแกน QR ส่งมอบ</span></a>
+      <a class="role" href="admin/"><b>ผู้ดูแล</b><span class="muted">ภาพรวม ร้าน บัญชี รายงาน</span></a>
+    </nav>
+    <p class="muted roles-note">ร้านค้าและผู้ดูแลต้องเข้าสู่ระบบ</p>
+  </div>
+</main>
+</body>
+</html>

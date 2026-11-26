@@ -567,6 +567,7 @@ function tracking(o, redraw) {
     closed ? null : h('section.card', { style: 'text-align:center' },
       o.pickup?.qr ? [h('div', {}, h('b', {}, 'QR รับอาหาร'), h('div.muted', {}, 'ให้ร้านสแกนตอนรับอาหาร ใช้ได้ครั้งเดียว')), qrImage(o.pickup.qr, 'QR รับอาหาร')] : null,
       o.pickup?.expired ? h('p.notice', {}, 'QR หมดอายุแล้ว แจ้งเลขออเดอร์ด้านล่างกับร้าน') : null,
+      o.pickup?.unavailable ? h('p.notice', { role: 'alert' }, 'แสดง QR รับอาหารไม่ได้ในขณะนี้ แจ้งเลขออเดอร์ด้านล่างกับร้าน') : null,
       ['PENDING', 'ACCEPTED', 'PREPARING'].includes(o.status) ? h('p.muted', {}, 'QR รับอาหารจะแสดงเมื่ออาหารพร้อม') : null,
       h('div.muted', {}, 'เลขออเดอร์'), h('div.code', { style: 'font-size:1.25rem;font-weight:700' }, o.order_no)),
     o.promptpay ? h('section.card', { style: 'text-align:center' }, h('h2', {}, 'จ่ายเงินด้วย PromptPay'), o.promptpay.payload

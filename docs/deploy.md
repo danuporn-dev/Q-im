@@ -9,6 +9,7 @@
 5. สร้าง DB user ที่มีสิทธิ์เฉพาะ database นี้ ห้ามใช้ `root`
 6. ตั้งค่า environment ตาม `.env.example` โดย `APP_ENV=production` ค่าอื่นที่ไม่ใช่ `development` ถือเป็น production เสมอ: ปิด mock login และ test hooks, cookie เป็น `Secure` (จึง login ผ่าน HTTP ธรรมดาไม่ได้)
 7. ให้ PHP เขียนได้เฉพาะ `storage/logs`, `storage/sessions`, `storage/uploads`, `storage/keys` (หรือตั้ง `PICKUP_TOKEN_KEY` ยาว 32 ตัวขึ้นไป แล้วไม่ต้องให้เขียน `storage/keys`) ห้ามแชร์หรือ commit คีย์นี้; คีย์เปลี่ยน = QR รับอาหารที่แสดงอยู่ใช้ไม่ได้ ลูกค้าเปิดหน้าออเดอร์ใหม่จะได้ QR ใหม่
+   - ถ้าไม่ตั้ง `PICKUP_TOKEN_KEY` ระบบสร้าง `storage/keys/pickup.key` เองตอนออเดอร์แรกพร้อมรับ ถ้าสร้างหรือเขียนไม่ได้: ออเดอร์ยังเปลี่ยนเป็นพร้อมรับได้ ลูกค้าเห็นข้อความ "แสดง QR รับอาหารไม่ได้ในขณะนี้" ร้านส่งมอบด้วยเลขออเดอร์ หน้า admin › ระบบ ขึ้นคำเตือนสีแดง และ `storage/logs` มีบรรทัด `[pickup] Pickup QR codes are off: ...` บอกโฟลเดอร์และวิธีแก้
 8. PromptPay: ทดสอบ QR ด้วยแอปธนาคารจริงกับยอดเล็กก่อนเปิดให้ร้านใช้ ตรวจชื่อผู้รับและยอด ระบบไม่ตรวจว่าเงินเข้า ร้านต้องยืนยันเอง
 9. รัน `php scripts/migrate.php` **ห้าม**รัน `seed.php`, `seed-demo.php`, `demo-history.php`, `e2e.php` และ `tests/` บน production (ทั้งหมดปฏิเสธเองเมื่อไม่ใช่ development)
 10. สร้างข้อมูลเริ่มต้นเอง เพราะไม่มี seed: แถว `roles` 3 แถว (`customer`, `merchant`, `admin`) และ admin คนแรก

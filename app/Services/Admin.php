@@ -308,6 +308,7 @@ final class Admin
             'line_login' => Env::get('LINE_LOGIN_CHANNEL_ID') !== '' && Env::get('LIFF_ID') !== '',
             'line_messaging' => Env::get('LINE_CHANNEL_ACCESS_TOKEN') !== '',
             'line_webhook' => Env::get('LINE_CHANNEL_SECRET') !== '',
+            'pickup_key' => PickupTokens::keyStatus(),
             'notifications' => $notifications,
         ];
     }

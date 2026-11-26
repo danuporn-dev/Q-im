@@ -166,7 +166,7 @@ const audit = (main) => listing(main, 'บันทึกการใช้ง�
 async function settings(main) {
   const s = await get('/admin/settings');
   const line = (label, value) => h('div.row.between', {}, h('span', {}, label), value);
-  main.replaceChildren(h('h1', {}, 'ระบบ'), h('section.card.stack', { style: 'max-width:560px' }, line('สภาพแวดล้อม', s.environment), line('เขตเวลา', s.timezone), line('LINE Login / LIFF', onOff(s.line_login, 'ตั้งค่าแล้ว', 'ยังไม่ตั้งค่า')), line('LINE Messaging', onOff(s.line_messaging, 'ตั้งค่าแล้ว', 'ยังไม่ตั้งค่า')), line('LINE Webhook', onOff(s.line_webhook, 'ตั้งค่าแล้ว', 'ยังไม่ตั้งค่า')),
+  main.replaceChildren(h('h1', {}, 'ระบบ'), s.pickup_key === 'unavailable' ? h('p.notice.bad', { role: 'alert' }, 'QR รับอาหารใช้ไม่ได้: PHP เขียนโฟลเดอร์ storage/keys ไม่ได้ ให้แก้สิทธิ์โฟลเดอร์ หรือตั้ง PICKUP_TOKEN_KEY ใน .env (รายละเอียดใน storage/logs) ระหว่างนี้ร้านส่งมอบด้วยเลขออเดอร์ได้') : '', h('section.card.stack', { style: 'max-width:560px' }, line('สภาพแวดล้อม', s.environment), line('คีย์ QR รับอาหาร', { env: 'จาก .env', file: 'ไฟล์ใน storage/keys', unavailable: 'ใช้ไม่ได้' }[s.pickup_key]), line('เขตเวลา', s.timezone), line('LINE Login / LIFF', onOff(s.line_login, 'ตั้งค่าแล้ว', 'ยังไม่ตั้งค่า')), line('LINE Messaging', onOff(s.line_messaging, 'ตั้งค่าแล้ว', 'ยังไม่ตั้งค่า')), line('LINE Webhook', onOff(s.line_webhook, 'ตั้งค่าแล้ว', 'ยังไม่ตั้งค่า')),
     h('h2', {}, 'การแจ้งเตือน'), ['PENDING', 'SENDING', 'SENT', 'FAILED'].map((k) => line(k, s.notifications[k] || 0)), h('p.muted', {}, 'ค่าระบบแก้ที่ไฟล์ .env บนเซิร์ฟเวอร์')));
 }
 

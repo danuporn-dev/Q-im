@@ -6,6 +6,7 @@ namespace App\Services;
 use App\Support\Clock;
 use App\Support\Database;
 use App\Support\Env;
+use App\Support\Log;
 use RuntimeException;
 
 /**
@@ -19,9 +20,19 @@ final class PickupTokens
     private const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
     private const HOURS = 12;
 
-    /** Creates the token of an order that became ready at $readyAt (UTC). Does nothing when it exists. */
+    /**
+     * Creates the token of an order that became ready at $readyAt (UTC). Does nothing when it exists.
+     * Without a usable key the order still becomes ready: the problem is logged, the customer is told, and the
+     * shop hands over with the typed order number.
+     */
     public static function issue(int $orderId, string $readyAt): void
     {
+        try {
+            self::key();
+        } catch (RuntimeException $e) {
+            Log::write('pickup', $e->getMessage());
+            return;
+        }
         $nonce = bin2hex(random_bytes(16));
         $expires = gmdate('Y-m-d H:i:s', strtotime($readyAt . ' UTC') + self::hours() * 3600);
         Database::run(
@@ -30,9 +41,15 @@ final class PickupTokens
         );
     }
 
-    /** For the owner of a READY order. @return array{qr: ?string, expires_at: string, expired: bool} */
+    /** For the owner of a READY order. @return array{qr: ?string, expires_at: ?string, expired: bool, unavailable: bool} */
     public static function forCustomer(int $orderId, string $readyAt): array
     {
+        try {
+            self::key();
+        } catch (RuntimeException $e) {
+            Log::write('pickup', $e->getMessage());
+            return ['qr' => null, 'expires_at' => null, 'expired' => false, 'unavailable' => true];
+        }
         $row = self::row($orderId);
         if ($row === null) {
             self::issue($orderId, $readyAt); // ready since before this table existed
@@ -50,7 +67,7 @@ final class PickupTokens
             }
         }
         $expired = $row['expires_at'] <= Clock::now();
-        return ['qr' => $expired || $row['used_at'] !== null ? null : $token, 'expires_at' => Clock::iso($row['expires_at']), 'expired' => $expired];
+        return ['qr' => $expired || $row['used_at'] !== null ? null : $token, 'expires_at' => Clock::iso($row['expires_at']), 'expired' => $expired, 'unavailable' => false];
     }
 
     public static function looksLikeToken(string $scanned): bool
@@ -100,6 +117,17 @@ final class PickupTokens
         return self::PREFIX . implode('', array_map(static fn (string $five): string => self::ALPHABET[bindec($five)], str_split($bits, 5)));
     }
 
+    /** For the admin settings page: where the key comes from, or why it cannot be used. */
+    public static function keyStatus(): string
+    {
+        try {
+            self::key();
+            return strlen(trim(Env::get('PICKUP_TOKEN_KEY'))) >= 32 ? 'env' : 'file';
+        } catch (RuntimeException) {
+            return 'unavailable';
+        }
+    }
+
     /** PICKUP_TOKEN_KEY (32 characters or more), else a random key kept in private storage. */
     private static function key(): string
     {
@@ -107,13 +135,15 @@ final class PickupTokens
         if (strlen($key) >= 32) {
             return $key;
         }
-        $path = dirname(__DIR__, 2) . '/storage/keys/pickup.key';
-        if (!is_dir(dirname($path))) {
-            @mkdir(dirname($path), 0700, true);
+        // Test hook, ignored outside development: another place for the key file.
+        $path = (Env::isDevelopment() ? Env::get('PICKUP_KEY_FILE') : '') ?: dirname(__DIR__, 2) . '/storage/keys/pickup.key';
+        $fix = 'make ' . dirname($path) . ' writable for PHP, or set PICKUP_TOKEN_KEY (32 characters or more) in .env';
+        if (!is_dir(dirname($path)) && !@mkdir(dirname($path), 0700, true) && !is_dir(dirname($path))) {
+            throw new RuntimeException("Pickup QR codes are off: cannot create the key folder; $fix.");
         }
-        $file = fopen($path, 'c+b');
+        $file = @fopen($path, 'c+b');
         if ($file === false || !flock($file, LOCK_EX)) {
-            throw new RuntimeException('Cannot open the pickup key; storage/keys must be writable.');
+            throw new RuntimeException("Pickup QR codes are off: cannot open the key file; $fix.");
         }
         try {
             $key = trim((string) stream_get_contents($file));
@@ -122,7 +152,7 @@ final class PickupTokens
                 rewind($file);
                 ftruncate($file, 0);
                 if (fwrite($file, $key) !== 64 || !fflush($file)) {
-                    throw new RuntimeException('Cannot write the pickup key.');
+                    throw new RuntimeException("Pickup QR codes are off: cannot write the key file; $fix.");
                 }
             }
             return $key;

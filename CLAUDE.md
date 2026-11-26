@@ -47,10 +47,11 @@
 - รายการโปรด (ร้าน/เมนู), รีวิวแบบไม่ระบุตัวตน 1 ครั้งต่อออเดอร์ COMPLETED, admin ซ่อนได้พร้อม audit
 - แจ้งเตือนในเว็บสำหรับลูกค้า, กระดิ่งและเสียงเตือนออเดอร์ใหม่ของร้าน, สถิติร้าน
 - PromptPay แบบร้านยืนยันเอง (ระบบไม่ตรวจยอด ไม่ถือ QR หรือสลิปเป็นหลักฐาน), QR รับอาหารแบบ token ใช้ครั้งเดียวและหมดอายุ
+- PromptPay ออนไลน์ผ่าน Stripe ยืนยันยอดอัตโนมัติด้วย webhook (`PAYMENT_MODE=gateway`, sandbox เท่านั้น, D42; คืนเงินทำมือใน Stripe Dashboard ระบบบันทึก REFUND_DUE) ดู docs/payments.md
 - จอแสดงคิวทีวี: อยู่ในขอบเขต แต่เลื่อนไปทำทีหลัง (D33)
 
 ### Extensions (ทำเมื่อผู้ใช้สั่ง)
-- PromptPay ที่ตรวจยอดอัตโนมัติผ่าน payment gateway/webhook, โปรโมชัน
+- โปรโมชัน, การแบ่งจ่ายให้หลายร้าน (Stripe Connect), คีย์ live
 - หลายสาขา, สั่งตามช่วงเวลา, รายงานขั้นสูง, smart recommendation
 
 ### นอกขอบเขต
@@ -234,6 +235,8 @@ flowchart LR
 | notifications | id, order_id, user_id, event_type, dedupe_key UNIQUE, status, attempts, next_attempt_at, sent_at, last_error |
 | audit_logs | id, actor_user_id, action, entity_type, entity_id, safe_metadata, created_at |
 | pickup_tokens | order_id PK, nonce, token_hash UNIQUE, expires_at, used_at (ตัว token คือ HMAC ด้วยคีย์นอกฐานข้อมูล) |
+| payment_intents | order_id FK, active_order_id UNIQUE (intent ที่ใช้อยู่), provider + intent_id UNIQUE, amount (สตางค์), currency, status, attempt, qr_*, succeeded_at, problem, refund_due_at, refunded_at/by, refund_note (D42) |
+| gateway_events | event_id PK, type, intent_id, order_id, result, received_at, processed_at — webhook ครั้งเดียวต่อ event |
 | images | id CHAR(32) PK (ชื่อสุ่ม), shop_id FK, uploaded_by, width, height, bytes, created_at — รูปที่ร้านอัปโหลด (D41); `menus.art` = ภาพวาดที่ร้านเลือกเมื่อไม่มีรูป |
 | favorite_shops / favorite_menus | (user_id, shop_id/menu_id) PK |
 | reviews | id, order_id UNIQUE, shop_id, user_id, rating 1–5, comment ≤ 500, hidden_at, hidden_by |
@@ -284,6 +287,10 @@ Prefix `/api/v1`; JSON response `{ "data": ... }` หรือ `{ "error": { "co
 | GET | /merchant/shops/{id}/notifications, /merchant/shops/{id}/reviews | shop bell; reviews read only |
 | GET/PATCH | /admin/reviews, /admin/reviews/{id} | list; hide/unhide with a reason |
 | POST | /merchant/orders/{id}/complete | body: pickup_qr (token or full order number) or override_reason; payment_received + method when unpaid |
+| POST | /orders/{id}/online-payment, /orders/{id}/online-payment/check | QR PromptPay ออนไลน์ (PREPARING/READY + UNPAID); ตรวจกับ Stripe (D42) |
+| POST | /orders/{id}/payment-method | เปลี่ยนเป็นจ่ายที่ร้าน หลัง Stripe ยกเลิก intent สำเร็จ |
+| POST | /api/webhooks/stripe | Stripe webhook (ลายเซ็น Stripe-Signature ไม่มี session/CSRF) |
+| GET/POST | /merchant/shops/{id}/refunds, /merchant/shops/{id}/refunds/{id}/done, /admin/refunds, /admin/refunds/{id}/done | รอคืนเงินและทำเครื่องหมายคืนแล้ว |
 | POST | /merchant/shops/{id}/images | upload a menu/shop picture (shop members; checked from content, redrawn by GD, D41) |
 | GET | /images/{key}, /images/{key}/thumb | redrawn JPEG (1200 px / 480 px) |
 
@@ -409,6 +416,12 @@ q-im/
 | T36 | Replaced, removed, unsaved pictures | Files and row deleted when no menu or shop uses them; pending uploads limited |
 | T37 | Old orders after a menu changes | Still load; retired menu shows the drawn picture |
 | T38 | Drawn picture choice | Shop chooses or the name decides; customers do not see the choice field |
+| T41 | Webhook signature | Valid accepted; wrong secret, changed payload, old or missing timestamp 400; repeats once |
+| T42–T43 | Online checkout and QR | Gateway mode only, ≥ 10 THB; QR only after acceptance; one PaymentIntent reused, server amount |
+| T44–T47 | Succeeded webhook | PAID once by the gateway; mismatched amount/order/currency not PAID; late money refund due; concurrent deliveries PAID once |
+| T48–T50 | Ownership, state, switching, checking | Owner only, CSRF, right state; switch only after the gateway cancelled; check reads Stripe; rate limited |
+| T51–T52, T54 | Keys, manual mode, refunds | Only sk_test_; no key in responses or logs; manual unchanged; refunds listed per shop/admin and marked once |
+| T53, T55 | Browser | Customer pays online and switches; shop hands over without a money step and marks refunds |
 | T39–T40 | Browser | Shop uploads/replaces/removes; every page shows a picture or drawing with alt text, no broken image |
 
 ## 16. LINE Setup Checklist (not yet verified/configured)

@@ -7,6 +7,7 @@
 /storage/**
 !/storage/**/
 !/storage/**/.gitkeep
+!/storage/uploads/.htaccess
 
 # Local dumps, editor and OS files
 *.log

@@ -119,12 +119,12 @@ final class Cart
         return ['items' => $items, 'total' => Money::fromSatang($total), 'quote' => hash('sha256', json_encode($signature)), 'count' => $count, 'has_problems' => $problems];
     }
 
-    /** @return array{name: string, image_url: ?string, base_price: string, options: list<array>, problem: ?string} */
+    /** @return array{name: string, image_url: ?string, art: string, base_price: string, options: list<array>, problem: ?string} */
     private static function line(int $shopId, int $menuId, array $optionIds): array
     {
-        $menu = Database::row('SELECT id, name, image_url, price, available, active FROM menus WHERE id = ? AND shop_id = ?', [$menuId, $shopId]);
+        $menu = Database::row('SELECT m.id, m.name, m.image_url, m.art, m.price, m.available, m.active, c.name AS category FROM menus m LEFT JOIN categories c ON c.id = m.category_id WHERE m.id = ? AND m.shop_id = ?', [$menuId, $shopId]);
         if ($menu === null) {
-            return ['name' => '', 'image_url' => null, 'base_price' => '0.00', 'options' => [], 'problem' => 'ไม่พบเมนูในร้านนี้'];
+            return ['name' => '', 'image_url' => null, 'art' => 'other', 'base_price' => '0.00', 'options' => [], 'problem' => 'ไม่พบเมนูในร้านนี้'];
         }
         $problem = !$menu['active'] || !$menu['available'] ? $menu['name'] . ' หมดแล้ว' : null;
         $chosen = [];
@@ -143,6 +143,6 @@ final class Cart
         if (count($chosen) !== count($optionIds)) {
             $problem ??= 'ตัวเลือกของ ' . $menu['name'] . ' เปลี่ยนไป กรุณาเลือกใหม่';
         }
-        return ['name' => $menu['name'], 'image_url' => $menu['image_url'], 'base_price' => $menu['price'], 'options' => $chosen, 'problem' => $problem];
+        return ['name' => $menu['name'], 'image_url' => $menu['image_url'], 'art' => FoodArt::of($menu['art'], $menu['name'], $menu['category']), 'base_price' => $menu['price'], 'options' => $chosen, 'problem' => $problem];
     }
 }

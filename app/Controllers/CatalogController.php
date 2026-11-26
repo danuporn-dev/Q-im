@@ -51,4 +51,10 @@ final class CatalogController
         Images::output($key);
         return null;
     }
+
+    public static function thumb(Request $q, string $key): ?array
+    {
+        Images::output($key, true);
+        return null;
+    }
 }

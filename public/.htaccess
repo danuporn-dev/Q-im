@@ -8,6 +8,10 @@ ServerSignature Off
 <IfModule php_module>
     php_flag display_errors Off
     php_flag display_startup_errors Off
+    # Pictures are at most 3 MB (Images::MAX_BYTES): a bigger upload is refused before PHP stores it.
+    # JSON requests are limited to 256 KB by the API itself.
+    php_value upload_max_filesize 3M
+    php_value post_max_size 4M
 </IfModule>
 
 # Apache would redirect "/customer" to an absolute http:// address, which is wrong behind an HTTPS proxy.

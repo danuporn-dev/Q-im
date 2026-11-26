@@ -51,13 +51,14 @@ final class Favorites
              JOIN menus m ON m.id = x.menu_id JOIN shops s ON s.id = m.shop_id JOIN food_courts f ON f.id = s.food_court_id WHERE x.user_id = ? ORDER BY s.name, m.name, m.id',
             [$userId]
         );
+        $pictures = FoodArt::forMenus(array_column($menus, 'id'));
         return [
             'shops' => array_map(static fn (array $s): array => [
                 'id' => $s['id'], 'name' => $s['name'], 'image_url' => $s['listed'] ? $s['image_url'] : null, 'listed' => (bool) $s['listed'],
                 'is_open' => $s['listed'] && $s['accepting_orders'] && Catalog::withinHours($hours[$s['id']] ?? []),
             ], $shops),
             'menus' => array_map(static fn (array $m): array => [
-                'id' => $m['id'], 'name' => $m['name'], 'price' => $m['listed'] ? $m['price'] : null, 'image_url' => $m['listed'] ? $m['image_url'] : null,
+                'id' => $m['id'], 'name' => $m['name'], 'price' => $m['listed'] ? $m['price'] : null, 'image_url' => $m['listed'] ? $m['image_url'] : null, 'art' => $pictures[(int) $m['id']]['art'] ?? 'other',
                 'listed' => (bool) $m['listed'], 'available' => $m['listed'] && $m['available'], 'shop' => ['id' => $m['shop_id'], 'name' => $m['shop_name']],
             ], $menus),
         ];

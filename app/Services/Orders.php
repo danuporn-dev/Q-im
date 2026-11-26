@@ -232,13 +232,17 @@ final class Orders
             $options[$o['order_item_id']][] = ['name' => $o['name'], 'price_delta' => $o['price_delta']];
         }
         $items = [];
-        foreach (Database::rows("SELECT id, order_id, menu_id, name_snapshot, unit_price, quantity, note FROM order_items WHERE order_id IN ($in) ORDER BY id") as $i) {
+        $rows = Database::rows("SELECT id, order_id, menu_id, name_snapshot, unit_price, quantity, note FROM order_items WHERE order_id IN ($in) ORDER BY id");
+        // The menu's picture today, not a snapshot: a retired menu shows its drawn picture (D41).
+        $pictures = FoodArt::forMenus(array_column($rows, 'menu_id'));
+        foreach ($rows as $i) {
             $chosen = $options[$i['id']] ?? [];
             $unit = Money::toSatang($i['unit_price']);
             foreach ($chosen as $o) {
                 $unit += Money::toSatang($o['price_delta']);
             }
-            $items[$i['order_id']][] = ['menu_id' => $i['menu_id'], 'name' => $i['name_snapshot'], 'quantity' => $i['quantity'], 'note' => $i['note'], 'unit_price' => $i['unit_price'], 'options' => $chosen, 'line_total' => Money::fromSatang($unit * $i['quantity'])];
+            $picture = $pictures[(int) $i['menu_id']] ?? ['image_url' => null, 'art' => FoodArt::of(null, $i['name_snapshot'])];
+            $items[$i['order_id']][] = ['menu_id' => $i['menu_id'], 'name' => $i['name_snapshot'], 'quantity' => $i['quantity'], 'note' => $i['note'], 'unit_price' => $i['unit_price'], 'options' => $chosen, 'line_total' => Money::fromSatang($unit * $i['quantity'])] + $picture;
         }
         return $items;
     }

@@ -56,8 +56,11 @@ final class ShopAdmin
             $settings['promptpay_enabled'] = Input::bool($in, 'promptpay_enabled', 'การเปิด PromptPay');
         }
         $hours = array_key_exists('hours', $in) ? self::validHours($in) : null;
-        Database::tx(static function () use ($userId, $shopId, $shop, $settings, $hours): void {
-            Database::row('SELECT id FROM shops WHERE id = ? FOR UPDATE', [$shopId]);
+        $replaced = Database::tx(static function () use ($userId, $shopId, $shop, $settings, $hours): ?string {
+            $current = Database::row('SELECT image_url FROM shops WHERE id = ? FOR UPDATE', [$shopId])['image_url'] ?? null;
+            if (array_key_exists('image_url', $shop)) {
+                Images::claim($shop['image_url'], $current, $shopId);
+            }
             Database::update('shops', $shopId, $shop);
             if ($settings !== []) {
                 Database::run('INSERT IGNORE INTO shop_settings (shop_id) VALUES (?)', [$shopId]);
@@ -78,7 +81,9 @@ final class ShopAdmin
                 OrderFlow::fillKitchen($shopId);
             }
             Audit::log($userId, 'shop.settings', 'shop', $shopId, ['fields' => array_merge(array_keys($shop + $settings), $hours === null ? [] : ['hours'])]);
+            return array_key_exists('image_url', $shop) && $shop['image_url'] !== $current ? $current : null;
         });
+        Images::release($replaced);
         return self::settings($shopId);
     }
 
@@ -150,6 +155,12 @@ final class ShopAdmin
         if (array_key_exists('image_url', $in)) {
             $row['image_url'] = Input::imageUrl($in, 'image_url');
         }
+        if (array_key_exists('art', $in)) {
+            if ($in['art'] !== null && !in_array($in['art'], FoodArt::KINDS, true)) {
+                throw HttpError::invalid('ภาพประกอบไม่ถูกต้อง', ['field' => 'art']);
+            }
+            $row['art'] = $in['art'];
+        }
         if ($new || array_key_exists('price', $in)) {
             $row['price'] = Input::money($in, 'price', 'ราคา');
         }
@@ -169,19 +180,23 @@ final class ShopAdmin
         }
         $groups = array_key_exists('option_groups', $in) ? self::validGroups($in) : null;
 
-        $menuId = Database::tx(static function () use ($userId, $shopId, $menuId, $row, $groups): int {
+        [$menuId, $replaced] = Database::tx(static function () use ($userId, $shopId, $menuId, $row, $groups): array {
+            $current = $menuId === null ? null : (Database::row('SELECT image_url FROM menus WHERE id = ? FOR UPDATE', [$menuId])['image_url'] ?? null);
+            if (array_key_exists('image_url', $row)) {
+                Images::claim($row['image_url'], $current, $shopId);
+            }
             if ($menuId === null) {
                 $menuId = Database::insert('menus', $row + ['shop_id' => $shopId]);
             } else {
-                Database::row('SELECT id FROM menus WHERE id = ? FOR UPDATE', [$menuId]);
                 Database::update('menus', $menuId, $row);
             }
             if ($groups !== null) {
                 self::syncGroups($menuId, $groups);
             }
             Audit::log($userId, 'menu.save', 'menu', $menuId, ['shop_id' => $shopId, 'fields' => array_keys($row)]);
-            return $menuId;
+            return [$menuId, array_key_exists('image_url', $row) && $row['image_url'] !== $current ? $current : null];
         });
+        Images::release($replaced);
         foreach (Catalog::menus($shopId, true)['menus'] as $menu) {
             if ((int) $menu['id'] === $menuId) {
                 return $menu;

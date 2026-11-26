@@ -24,7 +24,7 @@ $router = new Router();
 (require dirname(__DIR__) . '/app/routes.php')($router);
 $routes = (new ReflectionProperty(Router::class, 'routes'))->getValue($router);
 // Any route that is not listed here must demand a session of its realm.
-$public = ['GET /health', 'GET /config', 'POST /auth/line', 'POST /line/webhook', 'POST /auth/dev', 'POST /auth/login', 'GET /shops', 'GET /categories', 'GET /shops/{id}', 'GET /shops/{id}/menus', 'GET /images/{key}', 'GET /food-courts', 'GET /shops/{id}/reviews'];
+$public = ['GET /health', 'GET /config', 'POST /auth/line', 'POST /line/webhook', 'POST /auth/dev', 'POST /auth/login', 'GET /shops', 'GET /categories', 'GET /shops/{id}', 'GET /shops/{id}/menus', 'GET /images/{key}', 'GET /images/{key}/thumb', 'GET /food-courts', 'GET /shops/{id}/reviews'];
 $clients = ['customer' => $c, 'merchant' => $m, 'admin' => $admin];
 $checked = 0;
 $bad = [];

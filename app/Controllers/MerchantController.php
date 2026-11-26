@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Services\Audit;
 use App\Services\Auth;
 use App\Services\Catalog;
 use App\Services\Images;
@@ -127,7 +128,9 @@ final class MerchantController
     {
         $user = self::member($q, $shopId);
         RateLimiter::hit('upload', (string) $user['id'], 60, 3600);
-        return [['image_url' => 'image:' . Images::store($_FILES['image'] ?? null)], 201];
+        $key = Images::upload($_FILES['image'] ?? null, $shopId, $user['id']);
+        Audit::log($user['id'], 'image.upload', 'shop', $shopId, ['image' => $key]);
+        return [['image_url' => "image:$key"], 201];
     }
 
     private static function member(Request $q, int $shopId): array

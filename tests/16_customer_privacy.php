@@ -28,7 +28,8 @@ $check = static function (array $o, array $fields, string $label) use ($keys): v
         $bad[] = 'queue';
     }
     foreach ($o['items'] as $i) {
-        if ($keys($i) !== ['line_total', 'menu_id', 'name', 'note', 'options', 'quantity', 'unit_price']) {
+        // image_url and art: the menu's picture today, or the drawn one (D41).
+        if ($keys($i) !== ['art', 'image_url', 'line_total', 'menu_id', 'name', 'note', 'options', 'quantity', 'unit_price']) {
             $bad[] = 'item';
         }
         foreach ($i['options'] as $x) {

@@ -60,10 +60,15 @@ final class Catalog
             $row['waiting'] = $load[$row['id']]['waiting'];
             $row['eta_minutes'] = $load[$row['id']]['eta_minutes'];
             if ($q !== '') {
-                $row['matched_menus'] = Database::rows(
-                    'SELECT id, name, price, available FROM menus WHERE shop_id = ? AND active = 1 AND name LIKE ? ORDER BY name LIMIT 5',
+                $row['matched_menus'] = array_map(static function (array $m): array {
+                    $m['art'] = FoodArt::of($m['art'], $m['name'], $m['category']);
+                    unset($m['category']);
+                    return $m;
+                }, Database::rows(
+                    'SELECT m.id, m.name, m.price, m.available, m.image_url, m.art, c.name AS category FROM menus m LEFT JOIN categories c ON c.id = m.category_id
+                     WHERE m.shop_id = ? AND m.active = 1 AND m.name LIKE ? ORDER BY m.name LIMIT 5',
                     [$row['id'], '%' . addcslashes($q, '\\%_') . '%']
-                );
+                ));
             }
         }
         return [$rows, $total];
@@ -132,7 +137,8 @@ final class Catalog
     public static function menus(int $shopId, bool $includeInactive = false): array
     {
         $active = $includeInactive ? '' : ' AND active = 1';
-        $menus = Database::rows("SELECT id, category_id, name, description, image_url, price, prep_minutes, available, active FROM menus WHERE shop_id = ?$active ORDER BY name, id", [$shopId]);
+        $menus = Database::rows("SELECT id, category_id, name, description, image_url, art, price, prep_minutes, available, active FROM menus WHERE shop_id = ?$active ORDER BY name, id", [$shopId]);
+        $categoryNames = array_column(Database::rows('SELECT id, name FROM categories WHERE shop_id = ?', [$shopId]), 'name', 'id');
         $groups = [];
         if ($menus !== []) {
             $in = implode(',', array_column($menus, 'id'));
@@ -152,6 +158,11 @@ final class Catalog
         foreach ($menus as &$menu) {
             $menu['available'] = (bool) $menu['available'];
             $menu['active'] = (bool) $menu['active'];
+            // The shop's own choice only goes to the shop; everyone gets the picture to draw.
+            if ($includeInactive) {
+                $menu['art_choice'] = $menu['art'];
+            }
+            $menu['art'] = FoodArt::of($menu['art'], $menu['name'], $categoryNames[$menu['category_id']] ?? null);
             $menu['option_groups'] = array_values($groups[$menu['id']] ?? []);
         }
         return [

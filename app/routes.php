@@ -34,6 +34,7 @@ return static function (Router $r): void {
     $r->add('GET', '/shops/{id}', [CatalogController::class, 'shop']);
     $r->add('GET', '/shops/{id}/menus', [CatalogController::class, 'menus']);
     $r->add('GET', '/images/{key}', [CatalogController::class, 'image']);
+    $r->add('GET', '/images/{key}/thumb', [CatalogController::class, 'thumb']);
 
     $r->add('GET', '/shops/{id}/reviews', [CatalogController::class, 'reviews']);
 

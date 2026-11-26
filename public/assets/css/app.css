@@ -198,13 +198,13 @@ video.scan { display: block; width: 100%; max-height: 50dvh; aspect-ratio: 4 / 3
 .searchfield input[type=search]:focus { border-color: transparent; box-shadow: none; }
 .crowdcard { background: var(--surface); border-radius: var(--r-lg); padding: .8rem 1rem 1rem; margin-bottom: 1.2rem; }
 .crowdcard h2 { text-align: center; font-weight: 500; margin: .2rem 0 .6rem; }
-.crowdcard p { text-align: center; margin: .6rem 0 0; }
+.crowdcard p { text-align: center; margin: 1rem 0 0; }
 .meter { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; max-width: 18rem; margin: 0 auto; }
 .meter .seg { position: relative; height: 12px; font-size: 0; }
 .meter .seg:first-child { border-radius: 6px 0 0 6px; }
 .meter .seg:last-child { border-radius: 0 6px 6px 0; }
 .meter .low { background: var(--ok-fill); }
-.meter .mid { background: var(--warn-fill); }
+.meter .medium { background: var(--warn-fill); }
 .meter .high { background: var(--bad-fill); }
 .meter .seg.on { outline: 2px solid var(--ink); outline-offset: 1px; z-index: 1; }
 .meter .seg.on::after { content: ""; position: absolute; left: 50%; bottom: -9px; transform: translateX(-50%); border: 6px solid transparent; border-bottom-color: var(--ink); border-top: 0; }

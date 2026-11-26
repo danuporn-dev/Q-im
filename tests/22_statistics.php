@@ -34,6 +34,8 @@ $past(29, 23, 'twentynine');
 $past(30, 12, 'thirty');
 [, $rej] = Fixture::order($base, 'stat_rej', $s);
 $m->post("$a/merchant/orders/$rej/reject", ['reason' => 'หมด']);
+// Placed at a fixed hour today: "now" would fall into hour 0 or 23 when the test runs around midnight.
+Database::run('UPDATE orders SET created_at = ? WHERE id = ?', [Clock::bangkok()->setTime(13, 15)->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'), $rej]);
 $r = $m->get($url)['body']['data'];
 T::eq([['45.00', 1], ['90.00', 2], ['180.00', 4]], array_map(static fn ($p) => [$p['sales'], $p['paid_orders']], array_values($r['periods'])), 'today, 7 days and 30 days include today and exclude the day before the window');
 T::eq([24, 0, 1], [count($r['by_hour']), $r['by_hour'][0]['hour'], $r['by_hour'][0]['orders']], 'half past midnight Bangkok counts in hour 0');

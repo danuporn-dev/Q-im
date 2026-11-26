@@ -477,12 +477,11 @@ async function cartPage(alive) {
     const blocked = cart.has_problems || !cart.shop.is_open;
     return frame('', [header('ตะกร้าและยืนยันออเดอร์', `#/shop/${cart.shop.id}`), h('h2', {}, cart.shop.name),
       cart.shop.is_open ? null : h('p.notice.bad', {}, 'ร้านปิดรับออเดอร์อยู่ในขณะนี้'),
-      h('div.list', {}, cart.items.map((i, n) => h('div.item', {}, h('div.grow', {}, h('h3', {}, i.name || 'เมนูที่ไม่มีแล้ว'), i.options.length ? h('div.muted', {}, i.options.map((o) => o.name).join(', ')) : null, i.note ? h('div.muted', {}, 'หมายเหตุ: ', i.note) : null, i.problem ? h('p.notice.bad', {}, i.problem) : null,
-        h('div.row.between', {}, h('div.stepper', {}, h('button.icon', { type: 'button', 'aria-label': `ลดจำนวน ${i.name}`, onclick: replaceQty(n, i.quantity - 1) }, '−'), h('b', {}, i.quantity), h('button.icon', { type: 'button', 'aria-label': `เพิ่มจำนวน ${i.name}`, disabled: i.quantity >= 20, onclick: replaceQty(n, i.quantity + 1) }, '+')), h('span.price', {}, baht(i.line_total))),
-        h('button.btn.danger.ghost', { type: 'button', style: 'margin-top:.5rem', onclick: replaceQty(n, 0) }, 'ลบ'))))),
-      h('section.card', { style: 'margin-top:1rem' }, h('div.row.between', {}, h('span', {}, 'วิธีรับ'), h('b', {}, 'รับเองที่ร้าน')), paymentChoice(), h('div.total', {}, h('span', {}, 'ยอดรวม'), h('span', {}, baht(cart.total)))),
-      h('p', { style: 'margin-top:1rem' }, h('button.btn.block', { type: 'button', disabled: blocked, onclick: (e) => checkout(e.currentTarget, draw) }, blocked ? 'ยังสั่งไม่ได้' : `ยืนยันออเดอร์ ${baht(cart.total)}`)),
-      h('a.btn.ghost.block', { href: `#/shop/${cart.shop.id}` }, 'เพิ่มเมนูอื่น')], true);
+      h('div.list', {}, cart.items.map((i, n) => h('div.item.cartline', {}, picture(i.image_url, i.name || '?'), h('div.grow', {}, h('div.row.between', {}, h('h3', {}, i.name || 'เมนูที่ไม่มีแล้ว'), h('button.btn.danger.ghost.remove', { type: 'button', onclick: replaceQty(n, 0) }, 'ลบ')), i.options.length ? h('div.muted', {}, i.options.map((o) => o.name).join(', ')) : null, i.note ? h('div.muted', {}, 'หมายเหตุ: ', i.note) : null, i.problem ? h('p.notice.bad', {}, i.problem) : null,
+        h('div.row.between', {}, h('span.price', {}, baht(i.line_total)), h('div.stepper', {}, h('button.icon', { type: 'button', 'aria-label': `ลดจำนวน ${i.name}`, onclick: replaceQty(n, i.quantity - 1) }, '−'), h('b', {}, i.quantity), h('button.icon', { type: 'button', 'aria-label': `เพิ่มจำนวน ${i.name}`, disabled: i.quantity >= 20, onclick: replaceQty(n, i.quantity + 1) }, '+'))))))),
+      h('a.btn.ghost.block', { href: `#/shop/${cart.shop.id}`, style: 'margin-top:1rem' }, 'เพิ่มเมนูอื่น'),
+      h('section.checkout', {}, h('div.row.between', {}, h('span.eyebrow', {}, 'วิธีรับ'), h('b', {}, 'รับเองที่ร้าน')), paymentChoice(), h('div.total', {}, h('span.eyebrow', {}, 'ยอดรวม'), h('span.bigprice', {}, baht(cart.total))),
+        h('button.btn.block', { type: 'button', disabled: blocked, onclick: (e) => checkout(e.currentTarget, draw) }, blocked ? 'ยังสั่งไม่ได้' : `ยืนยันออเดอร์ ${baht(cart.total)}`))], true);
   };
   draw();
   return undefined;
@@ -492,10 +491,11 @@ let payWith = 'PAY_AT_STORE';
 function paymentChoice() {
   if (!cart.shop.promptpay) {
     payWith = 'PAY_AT_STORE';
-    return h('div.row.between', {}, h('span', {}, 'วิธีชำระ'), h('b', {}, 'ชำระที่ร้านตอนรับ'));
+    return h('div.row.between', {}, h('span.eyebrow', {}, 'วิธีชำระ'), h('b', {}, 'ชำระที่ร้านตอนรับ'));
   }
-  const option = (value, label, hint) => h('label.check', {}, h('input', { type: 'radio', name: 'payment_method', value, checked: payWith === value, onchange: () => { payWith = value; } }), h('span', {}, label, h('div.muted', {}, hint)));
-  return h('fieldset', {}, h('legend', {}, 'วิธีชำระ'), option('PAY_AT_STORE', 'ชำระที่ร้านตอนรับ', 'จ่ายเงินสดกับร้าน'), option('PROMPTPAY', 'PromptPay', 'QR จะแสดงเมื่ออาหารพร้อม ร้านตรวจยอดแล้วยืนยันเอง'));
+  // Tiles as in the Figma payment screen; each is a real radio button with its own text.
+  const option = (value, label, hint) => h('label.method', {}, h('input', { type: 'radio', name: 'payment_method', value, checked: payWith === value, onchange: () => { payWith = value; } }), h('span', {}, h('b', {}, label), h('span.muted', {}, hint)));
+  return h('fieldset.methods', {}, h('legend', {}, 'วิธีชำระ'), option('PAY_AT_STORE', 'ชำระที่ร้านตอนรับ', 'จ่ายเงินสดกับร้าน'), option('PROMPTPAY', 'PromptPay', 'QR จะแสดงเมื่ออาหารพร้อม ร้านตรวจยอดแล้วยืนยันเอง'));
 }
 
 const checkout = (button, redraw) => busy(button, async () => {
@@ -584,8 +584,8 @@ function tracking(o, redraw) {
   const at = Object.fromEntries(o.timeline.map((t) => [t.status, t.at]));
   const steps = closed ? o.timeline.map((t) => t.status) : flow;
   return [
-    h('section.ticket' + (closed ? '.bad' : o.status === 'READY' ? '.ready' : ''), { 'aria-live': 'polite' }, h('div', {}, o.shop.name), h('div.no', headline[0] ? { style: 'font-size:1.8rem' } : {}, headline[0] || (o.queue ? queueNo(o.queue.number) : '')), h('div', {}, headline[1]),
-      ['ACCEPTED', 'PREPARING'].includes(o.status) ? h('b', {}, eta(o.eta_minutes)) : null),
+    h('section.ticket' + (closed ? '.bad' : o.status === 'READY' ? '.ready' : ''), { 'aria-live': 'polite' }, h('div.eyebrow', {}, 'สถานะออเดอร์'), h('div', {}, o.shop.name), h('div.no', headline[0] ? { style: 'font-size:1.8rem' } : {}, headline[0] || (o.queue ? queueNo(o.queue.number) : '')), h('div', {}, headline[1]),
+      ['ACCEPTED', 'PREPARING'].includes(o.status) ? h('div.etabox', {}, h('b', {}, eta(o.eta_minutes)), h('span', {}, 'เวลาโดยประมาณก่อนรับได้')) : null),
     closed ? null : h('section.card', { style: 'text-align:center' },
       o.pickup?.qr ? [h('div', {}, h('b', {}, 'QR รับอาหาร'), h('div.muted', {}, 'ให้ร้านสแกนตอนรับอาหาร ใช้ได้ครั้งเดียว')), qrImage(o.pickup.qr, 'QR รับอาหาร')] : null,
       o.pickup?.expired ? h('p.notice', {}, 'QR หมดอายุแล้ว แจ้งเลขออเดอร์ด้านล่างกับร้าน') : null,

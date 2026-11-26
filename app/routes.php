@@ -29,6 +29,7 @@ return static function (Router $r): void {
 
     // Discovery (public)
     $r->add('GET', '/shops', [CatalogController::class, 'shops']);
+    $r->add('GET', '/food-courts', [CatalogController::class, 'foodCourts']);
     $r->add('GET', '/categories', [CatalogController::class, 'categories']);
     $r->add('GET', '/shops/{id}', [CatalogController::class, 'shop']);
     $r->add('GET', '/shops/{id}/menus', [CatalogController::class, 'menus']);

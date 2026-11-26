@@ -1,4 +1,5 @@
 import { $, STATUS, api, badge, baht, busy, changes, confirmBox, dateTime, dialog, empty, eta, failed, get, h, loading, picture, poll, post, put, queueNo, setCsrf, setPoll, time, toast, vendor } from './core.js';
+import { INFO } from './info.js';
 
 const app = $('#app');
 let config = { liff_id: null, dev_login: false };
@@ -115,7 +116,7 @@ async function route() {
   stop = () => {};
   const mine = ++turn;
   const [, page = '', id] = (location.hash || '#/').split('?')[0].split('/');
-  const routes = { '': home, search, shop, cart: cartPage, orders, order, profile, help, ...(config.dev_login ? { messages } : {}) };
+  const routes = { '': home, search, shop, cart: cartPage, orders, order, profile, help, privacy, faq, about, ...(config.dev_login ? { messages } : {}) };
   const show = routes[page] || home;
   const alive = () => mine === turn;
   const load = async () => {
@@ -136,17 +137,39 @@ async function route() {
 
 const priceRange = (s) => (s.min_price === null ? '' : s.min_price === s.max_price ? baht(s.min_price) : `${baht(s.min_price)} – ${baht(s.max_price)}`);
 const openBadge = (s) => h('span.badge.' + (s.is_open ? 'open' : 'bad'), {}, s.is_open ? 'เปิด' : 'ปิด');
+// Text and a shape, so the level does not depend on colour alone.
+const CROWD = { LOW: ['ต่ำ', 'open', '○'], MEDIUM: ['ปานกลาง', 'wait', '◐'], HIGH: ['สูง', 'bad', '●'] };
+const crowdBadge = (level) => (CROWD[level] ? h('span.badge.' + CROWD[level][1], {}, h('span', { 'aria-hidden': 'true' }, CROWD[level][2]), ` ความหนาแน่น${CROWD[level][0]}`) : null);
+// The chosen food court is only a convenience of this browser.
+const court = {
+  get: () => { try { return Number(localStorage.getItem('qim_court')) || 0; } catch (e) { return 0; } },
+  set: (id) => { try { if (id) localStorage.setItem('qim_court', String(id)); else localStorage.removeItem('qim_court'); } catch (e) { /* private mode */ } },
+};
+const courtQuery = () => (court.get() ? `food_court_id=${court.get()}` : '');
 const shopCard = (s) => h('a.item' + (s.is_open ? '' : '.off'), { href: `#/shop/${s.id}` }, picture(s.image_url, s.name), h('div.grow', {},
   h('div.row.between', {}, h('h3', {}, s.name), openBadge(s)), s.description ? h('div.muted', {}, s.description) : null,
-  h('div', {}, priceRange(s)), s.is_open ? h('div.muted', {}, `รอ ${s.waiting} คิว · ${eta(s.eta_minutes)}`) : null,
+  h('div', {}, priceRange(s)), s.is_open ? h('div.muted', {}, `รอ ${s.waiting} คิว · ${eta(s.eta_minutes)}`) : null, s.is_open ? h('div', {}, crowdBadge(s.crowd)) : null,
   s.matched_menus?.length ? h('div.muted', {}, 'พบ: ', s.matched_menus.map((m) => m.name + (m.available ? '' : ' (หมด)')).join(', ')) : null));
 
 async function home(alive) {
   let category = '';
   const list = h('div.list');
   const changed = changes();
+  const courtBox = h('div.stack');
+  const courtsChanged = changes();
+  const drawCourts = (courts) => {
+    if (courts.length && court.get() && !courts.some((c) => c.id === court.get())) court.set(0); // closed or removed
+    const chosen = courts.find((c) => c.id === court.get());
+    const select = h('select', { name: 'food_court', onchange: (e) => busy(e.currentTarget, async () => { court.set(Number(e.target.value)); courtsChanged(null); await draw(); }) },
+      h('option', { value: 0 }, 'ทุกโรงอาหาร'), courts.map((c) => h('option', { value: c.id, selected: c.id === court.get() }, `${c.name}${CROWD[c.crowd] ? ` · ${CROWD[c.crowd][2]} ${CROWD[c.crowd][0]}` : ''}`)));
+    courtBox.replaceChildren(h('label.field', {}, h('span', {}, 'โรงอาหาร'), select),
+      chosen ? h('p', {}, crowdBadge(chosen.crowd), ' ', h('span.muted', {}, `เปิด ${chosen.open_shops} จาก ${chosen.shops} ร้าน`, chosen.location ? ` · ${chosen.location}` : '')) : '');
+  };
   const draw = async () => {
-    const shops = await get('/shops' + (category ? `?category=${encodeURIComponent(category)}` : ''));
+    const courts = await get('/food-courts');
+    if (courtsChanged([courts, court.get()])) drawCourts(courts);
+    const query = [courtQuery(), category ? `category=${encodeURIComponent(category)}` : ''].filter(Boolean).join('&');
+    const shops = await get('/shops' + (query ? `?${query}` : ''));
     if (changed(shops)) list.replaceChildren(...(shops.length ? shops.map(shopCard) : [empty('ยังไม่มีร้านในหมวดนี้')]));
   };
   const categories = await get('/categories');
@@ -159,7 +182,8 @@ async function home(alive) {
     h('header.topbar', {}, h('div.brand', {}, 'Q-im'), h('a.btn.ghost', { href: '#/search' }, 'ค้นหาร้านหรือเมนู')),
     h('section.banner', {}, h('strong', {}, 'สั่งก่อน ไม่ต้องยืนรอ'), 'เดินไปรับเมื่ออาหารเสร็จ'),
     !me && config.dev_login && !config.liff_id ? demoLogin(route) : null,
-    chips, list,
+    courtBox, chips, list,
+    h('p.muted', { style: 'margin-top:1rem' }, infoLinks()),
   ]);
   stop = poll(draw, 10000);
 }
@@ -176,7 +200,7 @@ async function search(alive) {
     if (!text) return results.replaceChildren(empty('พิมพ์ชื่อร้านหรือเมนูที่อยากกิน'));
     results.replaceChildren(loading());
     try {
-      const shops = await get(`/shops?q=${encodeURIComponent(text)}${open.checked ? '&open=1' : ''}`);
+      const shops = await get(`/shops?q=${encodeURIComponent(text)}${open.checked ? '&open=1' : ''}${courtQuery() ? `&${courtQuery()}` : ''}`);
       if (n === seq) results.replaceChildren(...(shops.length ? shops.map(shopCard) : [empty('ไม่พบร้านหรือเมนูนี้')]));
     } catch (e) {
       if (n === seq) results.replaceChildren(failed(e, run));
@@ -195,7 +219,7 @@ async function shop(alive, id) {
   const [s, data] = await Promise.all([get(`/shops/${id}`), get(`/shops/${id}/menus`)]);
   if (!alive()) return;
   const status = h('p');
-  const drawStatus = (x) => status.replaceChildren(openBadge(x), ' ', x.is_open ? `รอ ${x.waiting} คิว · ${eta(x.eta_minutes)}` : 'ยังไม่รับออเดอร์ตอนนี้');
+  const drawStatus = (x) => status.replaceChildren(openBadge(x), ' ', x.is_open ? `รอ ${x.waiting} คิว · ${eta(x.eta_minutes)} ` : 'ยังไม่รับออเดอร์ตอนนี้', x.is_open && x.crowd ? crowdBadge(x.crowd) : '');
   drawStatus(s);
   const menuCard = (m) => h('button.item' + (m.available && s.is_open ? '' : '.off'), { type: 'button', disabled: !m.available, onclick: () => foodDetail(s, m) }, picture(m.image_url, m.name), h('div.grow', {}, h('h3', {}, m.name), m.description ? h('div.muted', {}, m.description) : null, h('div.row.between', {}, h('span.price', {}, baht(m.price)), m.available ? null : h('span.badge.bad', {}, 'หมด'))));
   const groups = [...data.categories, { id: null, name: 'อื่น ๆ' }].map((c) => [c, data.menus.filter((m) => m.category_id === c.id)]).filter(([, l]) => l.length);
@@ -442,13 +466,19 @@ async function profile() {
       cart = null;
       location.hash = '#/';
     }) }, 'ออกจากระบบ')),
-  h('section.card', { style: 'margin-top:1rem' }, h('h2', {}, 'ความเป็นส่วนตัว'), h('p', {}, 'Q-im เก็บรหัสผู้ใช้ LINE ชื่อ และรูปโปรไฟล์ เพื่อระบุตัวตนและแจ้งสถานะออเดอร์ ร้านเห็นเพียงรายการอาหารและหมายเหตุที่คุณเขียน ประวัติออเดอร์เก็บไว้เพื่อการตรวจสอบและรายงาน'))]);
+  h('section.card', { style: 'margin-top:1rem' }, h('h2', {}, 'ความเป็นส่วนตัว'), h('p', {}, 'Q-im เก็บรหัสผู้ใช้ LINE ชื่อ และรูปโปรไฟล์ เพื่อระบุตัวตนและแจ้งสถานะออเดอร์ ร้านเห็นเพียงรายการอาหารและหมายเหตุที่คุณเขียน ประวัติออเดอร์เก็บไว้เพื่อการตรวจสอบและรายงาน'), h('p', {}, infoLinks()))]);
   return undefined;
 }
 
 async function help() {
-  frame('profile', [header('วิธีใช้งาน', '#/profile'), h('section.card', {}, h('ol', {}, ['เลือกร้านและเมนู แล้วเพิ่มลงตะกร้า', 'ยืนยันออเดอร์ ยังไม่ต้องจ่ายเงิน', 'ร้านรับออเดอร์ ระบบออกหมายเลขคิวให้อัตโนมัติ', 'เมื่อสถานะเป็นพร้อมรับ เดินไปที่ร้าน', 'ให้ร้านสแกน QR รับอาหาร ชำระเงิน แล้วรับอาหาร'].map((t) => h('li', {}, t))), h('p.muted', {}, 'เวลารอเป็นค่าประมาณ ต้องการแก้ไขหรือยกเลิกหลังร้านรับออเดอร์ กรุณาติดต่อร้านโดยตรง'))]);
+  frame('profile', [header('วิธีใช้งาน', '#/profile'), h('section.card', {}, h('ol', {}, ['เลือกร้านและเมนู แล้วเพิ่มลงตะกร้า', 'ยืนยันออเดอร์ ยังไม่ต้องจ่ายเงิน', 'ร้านรับออเดอร์ ระบบออกหมายเลขคิวให้อัตโนมัติ', 'เมื่อสถานะเป็นพร้อมรับ เดินไปที่ร้าน', 'ให้ร้านสแกน QR รับอาหาร ชำระเงิน แล้วรับอาหาร'].map((t) => h('li', {}, t))), h('p.muted', {}, 'เวลารอเป็นค่าประมาณ ต้องการแก้ไขหรือยกเลิกหลังร้านรับออเดอร์ กรุณาติดต่อร้านโดยตรง')), h('p', {}, infoLinks())]);
 }
+
+const infoLinks = () => ['privacy', 'faq', 'about'].flatMap((k) => [h('a', { href: `#/${k}`, style: 'display:inline-flex;min-height:44px;align-items:center;margin-right:1rem' }, INFO[k][0])]);
+const info = (key) => async () => frame('profile', [header(INFO[key][0], '#/profile'), h('div.stack', {}, INFO[key][1]()), h('p', {}, infoLinks())]);
+const privacy = info('privacy');
+const faq = info('faq');
+const about = info('about');
 
 /** Demo only: the outbox of this customer as a chat. Nothing is sent to LINE. */
 async function messages(alive) {

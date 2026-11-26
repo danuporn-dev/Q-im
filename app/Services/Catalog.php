@@ -13,10 +13,14 @@ final class Catalog
     private const VISIBLE = 's.active = 1 AND f.active = 1';
 
     /** @return array{0: list<array>, 1: int} shops and total count */
-    public static function shops(string $q, string $category, bool $openOnly, int $limit, int $offset): array
+    public static function shops(string $q, string $category, bool $openOnly, int $limit, int $offset, int $courtId = 0): array
     {
         $where = [self::VISIBLE];
         $params = [];
+        if ($courtId > 0) {
+            $where[] = 's.food_court_id = ?';
+            $params[] = $courtId;
+        }
         if ($q !== '') {
             $like = '%' . addcslashes($q, '\\%_') . '%';
             $where[] = '(s.name LIKE ? OR EXISTS (SELECT 1 FROM menus m WHERE m.shop_id = s.id AND m.active = 1 AND m.name LIKE ?))';
@@ -27,7 +31,7 @@ final class Catalog
             $params[] = $category;
         }
         $rows = Database::rows(
-            'SELECT s.id, s.name, s.description, s.image_url, s.accepting_orders, f.name AS food_court,
+            'SELECT s.id, s.name, s.description, s.image_url, s.accepting_orders, s.food_court_id, f.name AS food_court,
                     (SELECT MIN(m.price) FROM menus m WHERE m.shop_id = s.id AND m.active = 1) AS min_price,
                     (SELECT MAX(m.price) FROM menus m WHERE m.shop_id = s.id AND m.active = 1) AS max_price
              FROM shops s JOIN food_courts f ON f.id = s.food_court_id
@@ -46,8 +50,11 @@ final class Catalog
         usort($rows, static fn (array $a, array $b): int => $b['is_open'] <=> $a['is_open']);
         $total = count($rows);
         $rows = array_slice($rows, $offset, $limit);
-        $load = Eta::shops(array_map('intval', array_column($rows, 'id')));
+        $ids = array_map('intval', array_column($rows, 'id'));
+        $load = Eta::shops($ids);
+        $limits = Crowd::limits($ids);
         foreach ($rows as &$row) {
+            $row['crowd'] = Crowd::level($load[$row['id']]['waiting'], $limits[$row['id']]);
             $row['waiting'] = $load[$row['id']]['waiting'];
             $row['eta_minutes'] = $load[$row['id']]['eta_minutes'];
             if ($q !== '') {
@@ -58,6 +65,36 @@ final class Catalog
             }
         }
         return [$rows, $total];
+    }
+
+    /** Courts that have at least one visible shop, each with the combined crowd level of its shops. */
+    public static function foodCourts(): array
+    {
+        $shops = Database::rows('SELECT s.id, s.food_court_id, s.accepting_orders, f.name, f.location FROM shops s JOIN food_courts f ON f.id = s.food_court_id WHERE ' . self::VISIBLE . ' ORDER BY f.name, f.id');
+        $ids = array_map('intval', array_column($shops, 'id'));
+        $load = Eta::shops($ids);
+        $limits = Crowd::limits($ids);
+        $hours = self::hours($ids);
+        $courts = [];
+        foreach ($shops as $s) {
+            $court = &$courts[$s['food_court_id']];
+            $court ??= ['id' => $s['food_court_id'], 'name' => $s['name'], 'location' => $s['location'], 'shops' => 0, 'open_shops' => 0, 'waiting' => 0, 'limit' => 0];
+            $open = $s['accepting_orders'] && self::withinHours($hours[$s['id']] ?? []);
+            $waiting = $load[$s['id']]['waiting'];
+            $court['shops']++;
+            $court['open_shops'] += $open ? 1 : 0;
+            // A closed shop with nothing left to cook must not make the court look emptier.
+            if (($open || $waiting > 0) && $limits[$s['id']] > 0) {
+                $court['waiting'] += $waiting;
+                $court['limit'] += $limits[$s['id']];
+            }
+            unset($court);
+        }
+        return array_values(array_map(static function (array $c): array {
+            $c['crowd'] = Crowd::level($c['waiting'], $c['limit']);
+            unset($c['waiting'], $c['limit']);
+            return $c;
+        }, $courts));
     }
 
     /** @return list<string> */
@@ -82,7 +119,7 @@ final class Catalog
         $shop['is_open'] = (bool) $shop['accepting_orders'] && self::withinHours($hours);
         unset($shop['accepting_orders']);
         $load = Eta::shops([$id])[$id];
-        return $shop + ['hours' => $hours, 'waiting' => $load['waiting'], 'eta_minutes' => $load['eta_minutes']];
+        return $shop + ['hours' => $hours, 'waiting' => $load['waiting'], 'eta_minutes' => $load['eta_minutes'], 'crowd' => Crowd::level($load['waiting'], Crowd::limits([$id])[$id])];
     }
 
     /**

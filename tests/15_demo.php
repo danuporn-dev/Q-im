@@ -46,7 +46,8 @@ T::eq(0, $run([]), 'seeds again');
 T::eq($first, $tables(), 'a second run adds nothing');
 $court = (int) Database::value("SELECT id FROM food_courts WHERE name = 'โรงอาหารกลาง'");
 $demo = array_column(Database::rows('SELECT id FROM shops WHERE food_court_id = ? ORDER BY id', [$court]), 'id');
-T::eq(3, count($demo), 'three shops in one food court');
+T::eq(3, count($demo), 'three shops in the central food court');
+T::eq(2, (int) Database::value("SELECT COUNT(*) FROM shops s JOIN food_courts f ON f.id = s.food_court_id WHERE f.name = 'โรงอาหารคณะวิศวกรรมศาสตร์'"), 'two shops in the second food court');
 $anon = new Client($base);
 $prod = new Client('http://127.0.0.1:8270');
 foreach ($demo as $i => $id) {

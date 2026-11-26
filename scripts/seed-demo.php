@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 // Usage: php scripts/seed-demo.php (development only; normally run by demo-reset.php)
-// Three Thai shops for a live presentation, on an empty migrated database. Safe to re-run: existing rows stay,
+// Two food courts with five Thai shops for a live presentation, on an empty migrated database. Safe to re-run: existing rows stay,
 // only pictures are refreshed. Pictures come from public/assets/images/demo/<name>.(jpg|jpeg|png|webp);
 // a menu without a file gets an SVG placeholder. Nothing is downloaded.
 
@@ -110,6 +110,27 @@ $shops = [
             ['มะม่วงปั่น', 'mamuang', 'มะม่วงปั่น', '45.00', 3, [$glass, $sweet], 'มะม่วงน้ำดอกไม้'],
         ],
     ]],
+    ['ข้าวมันไก่เจ๊หมวย', 'shop-khaomankai', 'ข้าวมันไก่|เจ๊หมวย', 45, 'ไก่นุ่ม น้ำจิ้มสูตรร้าน', 3, 3, 20, 'demo_merchant_4', 'เจ๊หมวย', [
+        'ข้าวมันไก่' => [
+            ['ข้าวมันไก่ต้ม', 'kai-tom', 'ข้าวมันไก่|ต้ม', '40.00', 3, [$bowl], 'เสิร์ฟพร้อมน้ำซุป'],
+            ['ข้าวมันไก่ทอด', 'kai-thot', 'ข้าวมันไก่|ทอด', '45.00', 4, [$bowl], 'ไก่ทอดกรอบ'],
+            ['ข้าวมันไก่ผสม', 'kai-phasom', 'ข้าวมันไก่|ผสม', '55.00', 4, [], 'ต้มและทอดในจานเดียว'],
+        ],
+        'ของเพิ่ม' => [
+            ['ไข่ต้ม', 'khai-tom', 'ไข่ต้ม', '10.00', 1, [], 'หนึ่งฟอง'],
+            ['น้ำซุปไก่ตุ๋น', 'sup-kai', 'น้ำซุป|ไก่ตุ๋น', '25.00', 2, [], 'ถ้วยใหญ่'],
+        ],
+    ]],
+    ['ขนมปังยามบ่าย', 'shop-khanom', 'ขนมปัง|ยามบ่าย', 280, 'ขนมปังปิ้งและของหวาน', 2, 4, 20, 'demo_merchant_5', 'พี่บีม', [
+        'ขนมปังปิ้ง' => [
+            ['ขนมปังเนยนม', 'toast-noey', 'ขนมปัง|เนยนม', '25.00', 3, [], 'ปิ้งร้อน ๆ'],
+            ['ขนมปังสังขยา', 'toast-sangkhaya', 'ขนมปัง|สังขยา', '30.00', 3, [], 'สังขยาใบเตย'],
+        ],
+        'ของหวาน' => [
+            ['บัวลอยไข่หวาน', 'bualoi', 'บัวลอย|ไข่หวาน', '35.00', 5, [], 'กะทิหอม'],
+            ['ลอดช่องกะทิ', 'lodchong', 'ลอดช่อง|กะทิ', '25.00', 2, [], 'ใส่น้ำแข็ง'],
+        ],
+    ]],
 ];
 
 try {
@@ -123,11 +144,16 @@ try {
     foreach (['customer', 'merchant', 'admin'] as $role) {
         $roles[$role] = ensure($pdo, 'roles', ['name' => $role]);
     }
-    $court = ensure($pdo, 'food_courts', ['name' => 'โรงอาหารกลาง'], ['location' => 'อาคารกิจกรรมนักศึกษา ชั้น 1']);
+    $courts = [
+        ensure($pdo, 'food_courts', ['name' => 'โรงอาหารกลาง'], ['location' => 'อาคารกิจกรรมนักศึกษา ชั้น 1']),
+        ensure($pdo, 'food_courts', ['name' => 'โรงอาหารคณะวิศวกรรมศาสตร์'], ['location' => 'อาคารวิศวกรรม ชั้นล่าง']),
+    ];
     $image = $pdo->prepare('UPDATE menus SET image_url = ? WHERE id = ?');
     $shopImage = $pdo->prepare('UPDATE shops SET image_url = ? WHERE id = ?');
 
-    foreach ($shops as [$name, $file, $label, $hue, $description, $capacity, $average, $max, $login, $staff, $categories]) {
+    foreach ($shops as $index => [$name, $file, $label, $hue, $description, $capacity, $average, $max, $login, $staff, $categories]) {
+        // The first three shops are in the central court, the others in the second one.
+        $court = $courts[$index < 3 ? 0 : 1];
         // No shop_hours rows: open at any time, so a rehearsal at night or on Sunday works too.
         $shop = ensure($pdo, 'shops', ['food_court_id' => $court, 'name' => $name], ['description' => $description, 'capacity' => $capacity, 'accepting_orders' => 1]);
         $shopImage->execute([picture($file, $label, $hue), $shop]);

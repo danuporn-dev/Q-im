@@ -8,6 +8,56 @@ let cart = null;
 let stop = () => {};
 let turn = 0;
 
+// ---- Notifications ----------------------------------------------------------
+
+let unread = 0;
+const bellText = () => (unread ? `แจ้งเตือน ${unread > 99 ? '99+' : unread}` : 'แจ้งเตือน');
+const bell = () => h('a.btn.ghost.bell' + (unread ? '.has' : ''), { href: '#/notifications', 'data-bell': true }, h('span', { 'aria-hidden': 'true' }, '🔔 '), h('span', {}, bellText()));
+function setUnread(n) {
+  unread = n;
+  for (const el of document.querySelectorAll('[data-bell]')) {
+    el.classList.toggle('has', n > 0);
+    el.lastChild.textContent = bellText();
+  }
+}
+async function countUnread() {
+  if (!me) return setUnread(0);
+  try {
+    return setUnread((await get('/notifications/count')).unread);
+  } catch (e) {
+    if (e.status !== 401) throw e;
+    return setUnread(0);
+  }
+}
+
+async function notifications(alive) {
+  if (!me) return needLogin('profile');
+  const list = h('div.list', { 'aria-live': 'polite' });
+  const more = h('div.row.end');
+  const changed = changes();
+  let page = 1;
+  const draw = async () => {
+    const { data, meta } = await api('GET', `/notifications?page=${page}`);
+    setUnread(meta.unread);
+    if (!changed([page, data, meta])) return;
+    list.replaceChildren(...(data.length ? data.map((n) => h('a.item' + (n.read ? '' : '.unread'), { href: `#/order/${n.order_id}`, onclick: async (e) => {
+      e.preventDefault();
+      if (!n.read) await post(`/notifications/${n.id}/read`).catch(() => {});
+      countUnread().catch(() => {});
+      location.hash = `#/order/${n.order_id}`;
+    } }, h('div.grow', {}, n.read ? null : h('span.badge.wait', {}, 'ใหม่'), h('p', { style: 'white-space:pre-line' }, n.text), h('div.muted', {}, dateTime(n.created_at))))) : [empty('ยังไม่มีการแจ้งเตือน')]));
+    const pages = Math.ceil(meta.total / meta.per_page);
+    const go = (d) => (e) => busy(e.currentTarget, async () => { page += d; await draw(); });
+    more.replaceChildren(...(pages > 1 ? [h('button.btn.ghost', { type: 'button', disabled: page <= 1, onclick: go(-1) }, 'ก่อนหน้า'), `${page} / ${pages}`, h('button.btn.ghost', { type: 'button', disabled: page >= pages, onclick: go(1) }, 'ถัดไป')] : []));
+  };
+  await draw();
+  if (!alive()) return undefined;
+  const all = h('button.btn.ghost', { type: 'button', onclick: () => busy(all, async () => { await post('/notifications/read-all'); await draw(); }) }, 'อ่านแล้วทั้งหมด');
+  frame('orders', [header('การแจ้งเตือน', '#/orders'), h('div.row.end', {}, all), list, more]);
+  stop = poll(draw, 10000);
+  return undefined;
+}
+
 // ---- Identity ---------------------------------------------------------------
 
 async function loadMe() {
@@ -15,6 +65,7 @@ async function loadMe() {
     me = await get('/me');
     setCsrf(me.csrf);
     cart = await get('/cart');
+    countUnread().catch(() => {});
   } catch (e) {
     if (e.status !== 401) throw e;
     me = null;
@@ -47,6 +98,8 @@ async function boot() {
     if (!me) toast(e.message, 'bad');
   }
   addEventListener('hashchange', route);
+  // Only while a bell is on the screen, so other pages send no extra requests.
+  poll(async () => { if (document.querySelector('[data-bell]')) await countUnread(); }, 10000);
   route();
 }
 
@@ -116,7 +169,7 @@ async function route() {
   stop = () => {};
   const mine = ++turn;
   const [, page = '', id] = (location.hash || '#/').split('?')[0].split('/');
-  const routes = { '': home, search, shop, cart: cartPage, orders, order, profile, help, privacy, faq, about, favorites, reviews, ...(config.dev_login ? { messages } : {}) };
+  const routes = { '': home, search, shop, cart: cartPage, orders, order, profile, help, privacy, faq, about, favorites, reviews, notifications, ...(config.dev_login ? { messages } : {}) };
   const show = routes[page] || home;
   const alive = () => mine === turn;
   const load = async () => {
@@ -259,7 +312,7 @@ async function home(alive) {
   const drawChips = () => chips.replaceChildren(...['', ...categories].map((c) => h('button.chip', { type: 'button', 'aria-pressed': String(c === category), onclick: (e) => busy(e.currentTarget, async () => { category = c; await draw(); drawChips(); }) }, c || 'ทั้งหมด')));
   drawChips();
   frame('home', [
-    h('header.topbar', {}, h('div.brand', {}, 'Q-im'), h('a.btn.ghost', { href: '#/search' }, 'ค้นหาร้านหรือเมนู')),
+    h('header.topbar', {}, h('div.brand', {}, 'Q-im'), h('div.row', {}, me ? bell() : null, h('a.btn.ghost', { href: '#/search' }, 'ค้นหา'))),
     h('section.banner', {}, h('strong', {}, 'สั่งก่อน ไม่ต้องยืนรอ'), 'เดินไปรับเมื่ออาหารเสร็จ'),
     !me && config.dev_login && !config.liff_id ? demoLogin(route) : null,
     courtBox, chips, list,
@@ -457,7 +510,7 @@ async function orders(alive) {
   await draw();
   if (!alive()) return undefined;
   drawChips();
-  frame('orders', [header('ออเดอร์ของฉัน'), chips, list, more]);
+  frame('orders', [header('ออเดอร์ของฉัน'), h('div.row.end', {}, bell()), chips, list, more]);
   stop = poll(draw, 10000);
   return undefined;
 }
@@ -540,7 +593,7 @@ function pickupQr(text) {
 
 async function profile() {
   if (!me) return needLogin('profile');
-  frame('profile', [header('โปรไฟล์'), h('section.card.stack', {}, h('div.row', {}, picture(me.avatar_url, me.display_name), h('h2', {}, me.display_name)), h('a.btn.ghost.block', { href: '#/favorites' }, 'รายการโปรดของฉัน'), h('a.btn.ghost.block', { href: '#/help' }, 'วิธีใช้งานและติดต่อ'),
+  frame('profile', [header('โปรไฟล์'), h('section.card.stack', {}, h('div.row', {}, picture(me.avatar_url, me.display_name), h('h2', {}, me.display_name)), bell(), h('a.btn.ghost.block', { href: '#/favorites' }, 'รายการโปรดของฉัน'), h('a.btn.ghost.block', { href: '#/help' }, 'วิธีใช้งานและติดต่อ'),
     h('button.btn.ghost.block', { type: 'button', onclick: (e) => busy(e.currentTarget, async () => {
       await post('/auth/logout');
       if (config.liff_id) { const { logout } = await import('./liff.js'); logout(); }

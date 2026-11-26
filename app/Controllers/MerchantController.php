@@ -6,6 +6,7 @@ namespace App\Controllers;
 use App\Services\Auth;
 use App\Services\Catalog;
 use App\Services\Images;
+use App\Services\Inbox;
 use App\Services\OrderFlow;
 use App\Services\Orders;
 use App\Services\Reports;
@@ -61,6 +62,12 @@ final class MerchantController
     {
         self::member($q, $shopId);
         return [Reports::summary($q->query('from'), $q->query('to'), $shopId), 200];
+    }
+
+    public static function bell(Request $q, int $shopId): array
+    {
+        self::member($q, $shopId);
+        return [Inbox::shopBell($shopId), 200];
     }
 
     /** Read only: there is no way for a shop to change or remove a review. */

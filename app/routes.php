@@ -44,6 +44,10 @@ return static function (Router $r): void {
         $r->add('DELETE', "/favorites/$kind/{id}", CustomerController::favorite($kind, false));
     }
     $r->add('POST', '/orders/{id}/review', [CustomerController::class, 'review']);
+    $r->add('GET', '/notifications', [CustomerController::class, 'notifications']);
+    $r->add('GET', '/notifications/count', [CustomerController::class, 'unread']);
+    $r->add('POST', '/notifications/read-all', [CustomerController::class, 'readAll']);
+    $r->add('POST', '/notifications/{id}/read', [CustomerController::class, 'read']);
     $r->add('GET', '/cart', [CustomerController::class, 'cart']);
     $r->add('PUT', '/cart', [CustomerController::class, 'updateCart']);
     $r->add('POST', '/orders', [CustomerController::class, 'checkout']);
@@ -66,6 +70,7 @@ return static function (Router $r): void {
     $r->add('GET', '/merchant/orders/{id}', [MerchantController::class, 'order']);
     $r->add('POST', '/merchant/orders/{id}/payment', [MerchantController::class, 'payment']);
     $r->add('POST', '/merchant/orders/{id}/complete', [MerchantController::class, 'complete']);
+    $r->add('GET', '/merchant/shops/{id}/notifications', [MerchantController::class, 'bell']);
     $r->add('GET', '/merchant/shops/{id}/reviews', [MerchantController::class, 'reviews']);
     $r->add('GET', '/merchant/shops/{id}/reports', [MerchantController::class, 'reports']);
     foreach (['accept', 'reject', 'prepare', 'ready', 'cancel'] as $action) {

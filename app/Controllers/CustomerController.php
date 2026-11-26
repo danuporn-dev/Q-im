@@ -6,6 +6,7 @@ namespace App\Controllers;
 use App\Services\Auth;
 use App\Services\Cart;
 use App\Services\Favorites;
+use App\Services\Inbox;
 use App\Services\Reviews;
 use App\Services\OrderFlow;
 use App\Services\Orders;
@@ -73,6 +74,33 @@ final class CustomerController
         RateLimiter::hit('review', (string) $user['id'], 10, 600);
         Reviews::create($user['id'], $id, $q->json());
         return [Orders::customerOrder($user['id'], $id), 201];
+    }
+
+    public static function notifications(Request $q): array
+    {
+        $user = Auth::user($q, 'customer');
+        [$page, $per, $offset] = $q->page(20);
+        [$rows, $total] = Inbox::ofCustomer($user['id'], $per, $offset);
+        return [$rows, 200, ['page' => $page, 'per_page' => $per, 'total' => $total, 'unread' => Inbox::unread($user['id'])]];
+    }
+
+    public static function unread(Request $q): array
+    {
+        return [['unread' => Inbox::unread(Auth::user($q, 'customer')['id'])], 200];
+    }
+
+    public static function read(Request $q, int $id): array
+    {
+        $user = Auth::user($q, 'customer');
+        Inbox::markRead($user['id'], $id);
+        return [['unread' => Inbox::unread($user['id'])], 200];
+    }
+
+    public static function readAll(Request $q): array
+    {
+        $user = Auth::user($q, 'customer');
+        Inbox::markAllRead($user['id']);
+        return [['unread' => Inbox::unread($user['id'])], 200];
     }
 
     public static function cancel(Request $q, int $id): array

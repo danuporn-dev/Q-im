@@ -23,7 +23,7 @@ async function start() {
   render();
 }
 
-const logoutButton = () => h('button.btn.ghost', { type: 'button', onclick: (e) => busy(e.currentTarget, async () => { stop(); await post('/auth/logout?realm=merchant'); location.reload(); }) }, 'ออกจากระบบ');
+const logoutButton = () => h('button.btn.ghost', { type: 'button', onclick: (e) => busy(e.currentTarget, async () => { stop(); stopBell(); await post('/auth/logout?realm=merchant'); location.reload(); }) }, 'ออกจากระบบ');
 
 function render() {
   stop();
@@ -34,7 +34,9 @@ function render() {
     ? h('select', { 'aria-label': 'เลือกร้าน', onchange: (e) => { shopId = Number(e.target.value); render(); } }, me.shops.map((s) => h('option', { value: s.id, selected: s.id === shopId }, s.name)))
     : h('strong', {}, me.shops[0].name);
   app.replaceChildren(h('div.desk', {}, h('nav.side', { 'aria-label': 'เมนูหลัก' }, h('div.brand', {}, 'Q-im'), picker,
+    h('div.bellbox', {}, bellCount, soundButton),
     TABS.map(([k, label]) => h('a', { href: '#/' + k, 'aria-current': k === tab ? 'page' : null }, label)), h('div.bottom', {}, logoutButton())), main));
+  watchBell();
   const page = { orders, history, menus, settings, reports, reviews }[tab];
   const load = async () => {
     try {
@@ -50,7 +52,6 @@ function render() {
 
 // ---- Orders -----------------------------------------------------------------
 
-let known = null;
 async function orders(main) {
   const status = h('div.row');
   const board = h('div.board');
@@ -60,9 +61,6 @@ async function orders(main) {
     // Drawing unchanged cards again could swallow a click; the clock part keeps waiting times current.
     if (!changed([list, shop, Math.floor(Date.now() / 15000)])) return;
     const pending = list.filter((o) => o.status === 'PENDING');
-    if (known && pending.some((o) => !known.has(o.id))) { toast('มีออเดอร์ใหม่'); beep(); }
-    known = new Set(list.map((o) => o.id));
-    document.title = pending.length ? `(${pending.length}) Q-im ร้านค้า` : 'Q-im ร้านค้า';
     status.replaceChildren(
       h('span.badge.' + (shop.is_open ? 'open' : 'bad'), {}, shop.is_open ? 'เปิดรับออเดอร์' : shop.accepting_orders ? 'นอกเวลาเปิด' : 'หยุดรับออเดอร์'),
       h('button.btn' + (shop.accepting_orders ? '.ghost' : ''), { type: 'button', onclick: (e) => busy(e.currentTarget, async () => { await patch(`/merchant/shops/${shopId}/settings`, { accepting_orders: !shop.accepting_orders }); await draw(); }) }, shop.accepting_orders ? 'หยุดรับชั่วคราว' : 'เปิดรับออเดอร์'),
@@ -78,14 +76,62 @@ async function orders(main) {
   stop = poll(draw, 6000);
 }
 
+// ---- Bell: orders waiting for an answer, on every tab -------------------------
+
+let audio = null; // created by a tap, because browsers play no sound without one
+let stopBell = () => {};
+const bellCount = h('a.btn.ghost', { href: '#/orders', 'data-bell': true });
+const soundButton = h('button.btn.ghost', { type: 'button', 'aria-pressed': 'false', onclick: async () => {
+  if (audio) {
+    await audio.close().catch(() => {});
+    audio = null;
+  } else {
+    audio = new AudioContext();
+    audio.resume().then(beep).catch(() => {}); // not awaited: the label must not wait for the sound system
+  }
+  drawSound();
+} });
+const drawSound = () => { soundButton.setAttribute('aria-pressed', String(Boolean(audio))); soundButton.textContent = audio ? '🔊 เสียงเตือนเปิดอยู่' : '🔇 เปิดเสียงเตือน'; };
+drawSound();
+
 function beep() {
+  if (!audio) return;
   try {
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    osc.connect(ctx.destination);
+    const osc = audio.createOscillator();
+    osc.connect(audio.destination);
     osc.start();
-    osc.stop(ctx.currentTime + 0.25);
+    osc.stop(audio.currentTime + 0.25);
   } catch (e) { /* sound is optional */ }
+}
+
+/** The newest order already announced, per shop, so a reload or a tab change never announces it again. */
+const announced = new Map();
+const lastAnnounced = (id) => {
+  if (!announced.has(id)) {
+    try { const v = sessionStorage.getItem('qim_bell_' + id); if (v !== null) announced.set(id, Number(v)); } catch (e) { /* private mode */ }
+  }
+  return announced.get(id);
+};
+const announce = (id, order) => {
+  announced.set(id, order);
+  try { sessionStorage.setItem('qim_bell_' + id, String(order)); } catch (e) { /* private mode */ }
+};
+
+function watchBell() {
+  stopBell();
+  const shop = shopId;
+  const check = async () => {
+    const { pending, latest_id: latest } = await get(`/merchant/shops/${shop}/notifications`);
+    if (shop !== shopId) return;
+    bellCount.textContent = `🔔 ออเดอร์ใหม่ ${pending}`;
+    bellCount.classList.toggle('has', pending > 0);
+    document.title = pending ? `(${pending}) Q-im ร้านค้า` : 'Q-im ร้านค้า';
+    const last = lastAnnounced(shop);
+    if (last !== undefined && latest > last) { toast('มีออเดอร์ใหม่'); beep(); }
+    announce(shop, Math.max(latest, last ?? 0));
+  };
+  check().catch(() => {});
+  stopBell = poll(check, 6000);
 }
 
 const lines = (o) => h('ul', {}, o.items.map((i) => h('li', {}, `${i.quantity} × ${i.name}`, i.options.length ? h('div.muted', {}, i.options.map((x) => x.name).join(', ')) : null, i.note ? h('div', {}, 'หมายเหตุ: ', i.note) : null)));

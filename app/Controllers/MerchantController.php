@@ -9,6 +9,7 @@ use App\Services\Images;
 use App\Services\OrderFlow;
 use App\Services\Orders;
 use App\Services\Reports;
+use App\Services\Reviews;
 use App\Services\ShopAdmin;
 use App\Support\RateLimiter;
 use App\Support\Request;
@@ -60,6 +61,15 @@ final class MerchantController
     {
         self::member($q, $shopId);
         return [Reports::summary($q->query('from'), $q->query('to'), $shopId), 200];
+    }
+
+    /** Read only: there is no way for a shop to change or remove a review. */
+    public static function reviews(Request $q, int $shopId): array
+    {
+        self::member($q, $shopId);
+        [$page, $per, $offset] = $q->page(20);
+        [$rows, $total] = Reviews::ofShop($shopId, $per, $offset);
+        return [$rows, 200, ['page' => $page, 'per_page' => $per, 'total' => $total] + Reviews::summaries([$shopId])[$shopId]];
     }
 
     public static function settings(Request $q, int $shopId): array

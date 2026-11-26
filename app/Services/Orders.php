@@ -133,6 +133,7 @@ final class Orders
         $order = self::forCustomer($rows[0] ?? throw HttpError::notFound('ไม่พบออเดอร์'));
         $order += Eta::order($orderId, $order['shop']['id'], $order['status']);
         $order['can_cancel'] = $order['status'] === 'PENDING';
+        $order['review'] = $order['status'] === 'COMPLETED' ? Reviews::ofOrder($orderId) : null;
         $order['timeline'] = array_map(
             static fn (array $l): array => ['status' => $l['to_status'], 'reason' => self::publicReason($l['to_status'], $l['reason']), 'at' => Clock::iso($l['created_at'])],
             Database::rows('SELECT to_status, reason, created_at FROM order_status_logs WHERE order_id = ? ORDER BY id', [$orderId])

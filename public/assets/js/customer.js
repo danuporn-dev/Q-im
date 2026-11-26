@@ -116,7 +116,7 @@ async function route() {
   stop = () => {};
   const mine = ++turn;
   const [, page = '', id] = (location.hash || '#/').split('?')[0].split('/');
-  const routes = { '': home, search, shop, cart: cartPage, orders, order, profile, help, privacy, faq, about, ...(config.dev_login ? { messages } : {}) };
+  const routes = { '': home, search, shop, cart: cartPage, orders, order, profile, help, privacy, faq, about, favorites, reviews, ...(config.dev_login ? { messages } : {}) };
   const show = routes[page] || home;
   const alive = () => mine === turn;
   const load = async () => {
@@ -146,9 +146,89 @@ const court = {
   set: (id) => { try { if (id) localStorage.setItem('qim_court', String(id)); else localStorage.removeItem('qim_court'); } catch (e) { /* private mode */ } },
 };
 const courtQuery = () => (court.get() ? `food_court_id=${court.get()}` : '');
+const ratingText = (s) => (s.review_count ? `★ ${Number(s.rating).toFixed(1)} (${s.review_count} รีวิว)` : 'ยังไม่มีรีวิว');
+const stars = (n) => h('span', { role: 'img', 'aria-label': `${n} จาก 5 ดาว` }, '★'.repeat(n) + '☆'.repeat(5 - n));
+
+// ---- Favourites -------------------------------------------------------------
+
+let favs = null; // { shops: Set, menus: Set } of the signed-in customer
+async function loadFavs() {
+  if (!me) { favs = null; return; }
+  const data = await get('/favorites');
+  favs = { shops: new Set(data.shops.map((x) => x.id)), menus: new Set(data.menus.map((x) => x.id)) };
+}
+function heart(kind, id) {
+  const button = h('button.btn.ghost', { type: 'button', onclick: () => busy(button, async () => {
+    if (!(await requireLogin())) return;
+    if (!favs) await loadFavs();
+    const on = favs[kind].has(id);
+    await api(on ? 'DELETE' : 'PUT', `/favorites/${kind}/${id}`);
+    if (on) favs[kind].delete(id); else favs[kind].add(id);
+    draw();
+  }) });
+  const draw = () => {
+    const on = Boolean(favs?.[kind].has(id));
+    button.setAttribute('aria-pressed', String(on));
+    button.textContent = on ? '♥ อยู่ในรายการโปรด' : '♡ เพิ่มในรายการโปรด';
+  };
+  draw();
+  return button;
+}
+
+async function favorites(alive) {
+  if (!me) return needLogin('profile');
+  const box = h('div.stack');
+  const draw = async () => {
+    const data = await get('/favorites');
+    const remove = (kind, id) => h('button.btn.danger.ghost', { type: 'button', onclick: (e) => busy(e.currentTarget, async () => { await api('DELETE', `/favorites/${kind}/${id}`); await draw(); }) }, 'เอาออก');
+    const row = (kind, x, title, note, href) => h('div.item' + (note ? '.off' : ''), {}, picture(x.image_url, x.name), h('div.grow', {}, h('h3', {}, href ? h('a', { href }, title) : title), note ? h('p.muted', {}, note) : null, remove(kind, x.id)));
+    box.replaceChildren(
+      h('h2', {}, 'ร้านโปรด'), data.shops.length ? h('div.list', {}, data.shops.map((s) => row('shops', s, s.name, !s.listed ? 'ร้านนี้ไม่เปิดให้บริการแล้ว' : s.is_open ? '' : 'ปิดอยู่ตอนนี้', s.listed ? `#/shop/${s.id}` : null))) : empty('ยังไม่มีร้านโปรด'),
+      h('h2', {}, 'เมนูโปรด'), data.menus.length ? h('div.list', {}, data.menus.map((m) => row('menus', m, `${m.name} · ${m.shop.name}${m.price === null ? '' : ` · ${baht(m.price)}`}`, !m.listed ? 'เมนูนี้เลิกขายแล้ว' : m.available ? '' : 'หมดชั่วคราว', m.listed ? `#/shop/${m.shop.id}` : null))) : empty('ยังไม่มีเมนูโปรด'),
+    );
+  };
+  await draw();
+  if (!alive()) return undefined;
+  frame('profile', [header('รายการโปรดของฉัน', '#/profile'), box]);
+  return undefined;
+}
+
+// ---- Reviews ----------------------------------------------------------------
+
+async function reviews(alive, id) {
+  const [shopData, first] = await Promise.all([get(`/shops/${id}`), api('GET', `/shops/${id}/reviews`)]);
+  const list = h('div.list');
+  const more = h('div.row.end');
+  let page = 1;
+  const draw = ({ data, meta }) => {
+    list.replaceChildren(...(data.length ? data.map((r) => h('article.card', {}, h('div.row.between', {}, stars(r.rating), h('span.muted', {}, r.date)), r.comment ? h('p', {}, r.comment) : null)) : [empty('ยังไม่มีรีวิว')]));
+    const pages = Math.ceil(meta.total / meta.per_page);
+    const go = (d) => (e) => busy(e.currentTarget, async () => { page += d; draw(await api('GET', `/shops/${id}/reviews?page=${page}`)); });
+    more.replaceChildren(...(pages > 1 ? [h('button.btn.ghost', { type: 'button', disabled: page <= 1, onclick: go(-1) }, 'ก่อนหน้า'), `${page} / ${pages}`, h('button.btn.ghost', { type: 'button', disabled: page >= pages, onclick: go(1) }, 'ถัดไป')] : []));
+  };
+  draw(first);
+  if (!alive()) return;
+  frame('home', [header(`รีวิว ${shopData.name}`, `#/shop/${id}`), h('p', {}, ratingText(shopData)), h('p.muted', {}, 'รีวิวจากผู้ที่สั่งและรับอาหารแล้ว ไม่แสดงชื่อผู้เขียน'), list, more]);
+}
+
+function reviewSection(o, redraw) {
+  if (o.review) {
+    return h('section.card', {}, h('h2', {}, 'รีวิวของคุณ'), stars(o.review.rating), o.review.comment ? h('p', {}, o.review.comment) : null, o.review.hidden ? h('p.muted', {}, 'ผู้ดูแลซ่อนรีวิวนี้') : null);
+  }
+  const rating = h('select', { name: 'rating', required: true }, h('option', { value: '' }, 'เลือกคะแนน'), [5, 4, 3, 2, 1].map((n) => h('option', { value: n }, `${n} ดาว ${'★'.repeat(n)}`)));
+  const comment = h('textarea', { name: 'comment', maxlength: 500, rows: 3 });
+  const button = h('button.btn.block', { type: 'submit' }, 'ส่งรีวิว');
+  return h('section.card', {}, h('h2', {}, 'ให้คะแนนร้าน'), h('form', { onsubmit: (e) => {
+    e.preventDefault();
+    busy(button, async () => {
+      try { await post(`/orders/${o.id}/review`, { rating: Number(rating.value), comment: comment.value }); toast('ขอบคุณสำหรับรีวิว'); } finally { await redraw(); }
+    });
+  } }, h('label.field', {}, h('span', {}, 'คะแนน'), rating), h('label.field', {}, h('span', {}, 'ความคิดเห็น (ไม่บังคับ ไม่เกิน 500 ตัวอักษร)'), comment), h('p.muted', {}, 'รีวิวแสดงโดยไม่ระบุชื่อ ส่งแล้วแก้ไขไม่ได้ อย่าใส่ข้อมูลส่วนตัว'), button));
+}
+
 const shopCard = (s) => h('a.item' + (s.is_open ? '' : '.off'), { href: `#/shop/${s.id}` }, picture(s.image_url, s.name), h('div.grow', {},
   h('div.row.between', {}, h('h3', {}, s.name), openBadge(s)), s.description ? h('div.muted', {}, s.description) : null,
-  h('div', {}, priceRange(s)), s.is_open ? h('div.muted', {}, `รอ ${s.waiting} คิว · ${eta(s.eta_minutes)}`) : null, s.is_open ? h('div', {}, crowdBadge(s.crowd)) : null,
+  h('div', {}, priceRange(s)), s.review_count ? h('div.muted', {}, ratingText(s)) : null, s.is_open ? h('div.muted', {}, `รอ ${s.waiting} คิว · ${eta(s.eta_minutes)}`) : null, s.is_open ? h('div', {}, crowdBadge(s.crowd)) : null,
   s.matched_menus?.length ? h('div.muted', {}, 'พบ: ', s.matched_menus.map((m) => m.name + (m.available ? '' : ' (หมด)')).join(', ')) : null));
 
 async function home(alive) {
@@ -216,7 +296,7 @@ async function search(alive) {
 }
 
 async function shop(alive, id) {
-  const [s, data] = await Promise.all([get(`/shops/${id}`), get(`/shops/${id}/menus`)]);
+  const [s, data] = await Promise.all([get(`/shops/${id}`), get(`/shops/${id}/menus`), loadFavs()]);
   if (!alive()) return;
   const status = h('p');
   const drawStatus = (x) => status.replaceChildren(openBadge(x), ' ', x.is_open ? `รอ ${x.waiting} คิว · ${eta(x.eta_minutes)} ` : 'ยังไม่รับออเดอร์ตอนนี้', x.is_open && x.crowd ? crowdBadge(x.crowd) : '');
@@ -224,6 +304,7 @@ async function shop(alive, id) {
   const menuCard = (m) => h('button.item' + (m.available && s.is_open ? '' : '.off'), { type: 'button', disabled: !m.available, onclick: () => foodDetail(s, m) }, picture(m.image_url, m.name), h('div.grow', {}, h('h3', {}, m.name), m.description ? h('div.muted', {}, m.description) : null, h('div.row.between', {}, h('span.price', {}, baht(m.price)), m.available ? null : h('span.badge.bad', {}, 'หมด'))));
   const groups = [...data.categories, { id: null, name: 'อื่น ๆ' }].map((c) => [c, data.menus.filter((m) => m.category_id === c.id)]).filter(([, l]) => l.length);
   const render = () => frame('home', [header(s.name, '#/'), picture(s.image_url, s.name, 'hero'), h('div.stack', { style: 'margin-top:.8rem' }, s.description ? h('p', {}, s.description) : null, h('p.muted', {}, s.food_court, s.location ? ` · ${s.location}` : ''), status,
+    h('div.row.between', {}, h('a', { href: `#/reviews/${s.id}`, style: 'display:inline-flex;min-height:44px;align-items:center' }, ratingText(s)), heart('shops', s.id)),
     groups.length ? groups.map(([c, l]) => h('section', {}, h('h2', {}, c.name), h('div.list', {}, l.map(menuCard)))) : empty('ร้านนี้ยังไม่มีเมนู'))]);
   render();
   shopView = { id: s.id, render };
@@ -258,7 +339,7 @@ function foodDetail(s, m) {
         toast('เพิ่มลงตะกร้าแล้ว');
         if (shopView?.id === s.id && location.hash.startsWith('#/shop/')) shopView.render();
       });
-    } }, picture(m.image_url, m.name, 'hero'), h('p', {}, h('span.price', {}, baht(m.price)), ' ', m.description || ''),
+    } }, picture(m.image_url, m.name, 'hero'), h('p', {}, h('span.price', {}, baht(m.price)), ' ', m.description || ''), h('p', {}, heart('menus', m.id)),
     m.option_groups.map((g) => h('fieldset', {}, h('legend', {}, g.name, g.min_select > 0 ? ' (จำเป็น)' : '', g.max_select > 1 ? ` เลือกได้ ${g.max_select}` : ''), g.options.map((o) => {
       const single = g.max_select === 1 && g.min_select === 1;
       const input = h('input', { type: single ? 'radio' : 'checkbox', name: `g${g.id}`, checked: picked.get(g.id).has(o.id), onchange: () => {
@@ -423,6 +504,7 @@ function tracking(o, redraw) {
     closed ? null : h('section.card', { style: 'text-align:center' }, o.status === 'COMPLETED' ? null : [h('div', {}, h('b', {}, 'QR รับอาหาร'), h('div.muted', {}, 'ให้ร้านสแกนตอนรับอาหาร')), pickupQr(o.order_no)], h('div.muted', {}, 'เลขออเดอร์'), h('div.code', { style: 'font-size:1.25rem;font-weight:700' }, o.order_no)),
     h('section.card', {}, h('h2', {}, 'สถานะ'), h('ol.steps', {}, steps.map((s) => h('li' + (at[s] ? '.done' : ''), { 'aria-current': s === o.status ? 'step' : null }, STATUS[s][0], at[s] ? h('span.muted', {}, ' ', time(at[s])) : null)))),
     h('section.card', {}, h('h2', {}, 'รายการ'), o.items.map((i) => h('div.row.between', {}, h('span.grow', {}, `${i.quantity} × ${i.name}`, i.options.length ? h('div.muted', {}, i.options.map((x) => x.name).join(', ')) : null, i.note ? h('div.muted', {}, 'หมายเหตุ: ', i.note) : null), baht(i.line_total))), h('div.total', {}, h('span', {}, 'ยอดรวม'), h('span', {}, baht(o.total))), h('p.muted', {}, o.payment_status === 'PAID' ? '✓ ชำระแล้ว' : closed ? '' : 'ชำระที่ร้านตอนรับอาหาร')),
+    o.status === 'COMPLETED' ? reviewSection(o, redraw) : null,
     o.can_cancel ? h('button.btn.danger.ghost.block', { type: 'button', onclick: async (e) => {
       const button = e.currentTarget;
       if (await confirmBox('ยกเลิกออเดอร์?', 'ยกเลิกแล้วต้องสั่งใหม่', 'ยกเลิกออเดอร์', true)) {
@@ -458,7 +540,7 @@ function pickupQr(text) {
 
 async function profile() {
   if (!me) return needLogin('profile');
-  frame('profile', [header('โปรไฟล์'), h('section.card.stack', {}, h('div.row', {}, picture(me.avatar_url, me.display_name), h('h2', {}, me.display_name)), h('a.btn.ghost.block', { href: '#/help' }, 'วิธีใช้งานและติดต่อ'),
+  frame('profile', [header('โปรไฟล์'), h('section.card.stack', {}, h('div.row', {}, picture(me.avatar_url, me.display_name), h('h2', {}, me.display_name)), h('a.btn.ghost.block', { href: '#/favorites' }, 'รายการโปรดของฉัน'), h('a.btn.ghost.block', { href: '#/help' }, 'วิธีใช้งานและติดต่อ'),
     h('button.btn.ghost.block', { type: 'button', onclick: (e) => busy(e.currentTarget, async () => {
       await post('/auth/logout');
       if (config.liff_id) { const { logout } = await import('./liff.js'); logout(); }

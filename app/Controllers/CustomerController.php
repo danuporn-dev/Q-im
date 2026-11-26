@@ -5,6 +5,8 @@ namespace App\Controllers;
 
 use App\Services\Auth;
 use App\Services\Cart;
+use App\Services\Favorites;
+use App\Services\Reviews;
 use App\Services\OrderFlow;
 use App\Services\Orders;
 use App\Support\HttpError;
@@ -48,6 +50,29 @@ final class CustomerController
     public static function order(Request $q, int $id): array
     {
         return [Orders::customerOrder(Auth::user($q, 'customer')['id'], $id), 200];
+    }
+
+    public static function favorites(Request $q): array
+    {
+        return [Favorites::ofCustomer(Auth::user($q, 'customer')['id']), 200];
+    }
+
+    public static function favorite(string $kind, bool $add): callable
+    {
+        return static function (Request $q, int $id) use ($kind, $add): array {
+            $user = Auth::user($q, 'customer');
+            RateLimiter::hit('favorite', (string) $user['id'], 60, 60);
+            $add ? Favorites::add($user['id'], $kind, $id) : Favorites::remove($user['id'], $kind, $id);
+            return [['favorite' => $add], 200];
+        };
+    }
+
+    public static function review(Request $q, int $id): array
+    {
+        $user = Auth::user($q, 'customer');
+        RateLimiter::hit('review', (string) $user['id'], 10, 600);
+        Reviews::create($user['id'], $id, $q->json());
+        return [Orders::customerOrder($user['id'], $id), 201];
     }
 
     public static function cancel(Request $q, int $id): array

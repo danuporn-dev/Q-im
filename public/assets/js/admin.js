@@ -2,7 +2,7 @@ import { $, STATUS, api, badge, baht, busy, confirmBox, dateTime, dialog, empty,
 
 const app = $('#app');
 let me = null;
-const TABS = [['overview', 'ภาพรวม'], ['orders', 'ออเดอร์'], ['shops', 'ร้าน'], ['courts', 'โรงอาหาร'], ['users', 'ผู้ใช้และสิทธิ์'], ['reports', 'รายงาน'], ['audit', 'บันทึกการใช้งาน'], ['settings', 'ระบบ']];
+const TABS = [['overview', 'ภาพรวม'], ['orders', 'ออเดอร์'], ['shops', 'ร้าน'], ['courts', 'โรงอาหาร'], ['users', 'ผู้ใช้และสิทธิ์'], ['reports', 'รายงาน'], ['reviews', 'รีวิว'], ['audit', 'บันทึกการใช้งาน'], ['settings', 'ระบบ']];
 
 async function start() {
   app.replaceChildren(loading());
@@ -155,7 +155,12 @@ async function reports(main, from = today(), to = today()) {
       h('h2', {}, 'ตามวัน'), table(['วันที่', '#ออเดอร์', '#ยอด'], r.by_day.map((d) => h('tr', {}, h('td', {}, d.day), h('td.num', {}, d.orders), h('td.num', {}, baht(d.sales)))))) : empty('ไม่มียอดขายในช่วงนี้'));
 }
 
-const AUDIT = { 'pickup.override': 'ส่งมอบไม่สแกน QR', 'order.no_show': 'ลูกค้าไม่มารับ', 'payment.confirm': 'ยืนยันชำระเงิน', 'auth.login': 'เข้าสู่ระบบ' };
+const reviews = (main) => listing(main, 'รีวิว', '/admin/reviews', [], (data, reload) => table(['เวลา', 'ร้าน', 'ออเดอร์', 'คะแนน', 'ความคิดเห็น', 'สถานะ', ''], data.map((r) => h('tr', {}, h('td', {}, dateTime(r.created_at)), h('td', {}, r.shop_name), h('td', {}, r.order_no), h('td', {}, `★ ${r.rating}`), h('td', {}, r.comment || '–'), h('td', {}, onOff(!r.hidden, 'แสดง', 'ซ่อนอยู่')), h('td', {}, ghost(r.hidden ? 'เลิกซ่อน' : 'ซ่อน', async () => {
+  const why = h('input', { required: true, minlength: 3, maxlength: 300 });
+  if (await form(r.hidden ? 'เลิกซ่อนรีวิว' : 'ซ่อนรีวิว', [field('เหตุผล (บันทึกในประวัติ)', why)], () => patch(`/admin/reviews/${r.id}`, { hidden: !r.hidden, reason: why.value }))) await reload();
+}, r.hidden ? '' : '.danger'))))));
+
+const AUDIT = { 'review.hide': 'ซ่อนรีวิว', 'review.unhide': 'เลิกซ่อนรีวิว', 'pickup.qr_wrong': 'สแกน QR ผิด', 'pickup.override': 'ส่งมอบไม่สแกน QR', 'order.no_show': 'ลูกค้าไม่มารับ', 'payment.confirm': 'ยืนยันชำระเงิน', 'auth.login': 'เข้าสู่ระบบ' };
 const audit = (main) => listing(main, 'บันทึกการใช้งาน', '/admin/audit-logs', [h('select', { name: 'action', 'aria-label': 'ประเภท' }, h('option', { value: '' }, 'ทุกประเภท'), Object.entries(AUDIT).map(([k, v]) => h('option', { value: k }, v)))], (data) => table(['เวลา', 'ผู้ทำ', 'การกระทำ', 'ข้อมูล', 'รายละเอียด'], data.map((l) => h('tr', {}, h('td', {}, dateTime(l.created_at)), h('td', {}, l.actor || 'ระบบ'), h('td', {}, AUDIT[l.action] || l.action), h('td', {}, `${l.entity_type} ${l.entity_id ?? ''}`), h('td', {}, l.safe_metadata || '')))));
 
 async function settings(main) {
@@ -165,6 +170,6 @@ async function settings(main) {
     h('h2', {}, 'การแจ้งเตือน'), ['PENDING', 'SENDING', 'SENT', 'FAILED'].map((k) => line(k, s.notifications[k] || 0)), h('p.muted', {}, 'ค่าระบบแก้ที่ไฟล์ .env บนเซิร์ฟเวอร์')));
 }
 
-const PAGES = { overview, orders, shops, courts, users, reports, audit, settings };
+const PAGES = { overview, orders, shops, courts, users, reports, reviews, audit, settings };
 addEventListener('hashchange', () => { if (me) render(); });
 start();

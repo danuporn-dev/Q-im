@@ -53,7 +53,9 @@ final class Catalog
         $ids = array_map('intval', array_column($rows, 'id'));
         $load = Eta::shops($ids);
         $limits = Crowd::limits($ids);
+        $ratings = Reviews::summaries($ids);
         foreach ($rows as &$row) {
+            $row += $ratings[$row['id']];
             $row['crowd'] = Crowd::level($load[$row['id']]['waiting'], $limits[$row['id']]);
             $row['waiting'] = $load[$row['id']]['waiting'];
             $row['eta_minutes'] = $load[$row['id']]['eta_minutes'];
@@ -119,7 +121,7 @@ final class Catalog
         $shop['is_open'] = (bool) $shop['accepting_orders'] && self::withinHours($hours);
         unset($shop['accepting_orders']);
         $load = Eta::shops([$id])[$id];
-        return $shop + ['hours' => $hours, 'waiting' => $load['waiting'], 'eta_minutes' => $load['eta_minutes'], 'crowd' => Crowd::level($load['waiting'], Crowd::limits([$id])[$id])];
+        return $shop + ['hours' => $hours, 'waiting' => $load['waiting'], 'eta_minutes' => $load['eta_minutes'], 'crowd' => Crowd::level($load['waiting'], Crowd::limits([$id])[$id])] + Reviews::summaries([$id])[$id];
     }
 
     /**

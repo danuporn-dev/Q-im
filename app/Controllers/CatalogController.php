@@ -5,6 +5,7 @@ namespace App\Controllers;
 
 use App\Services\Catalog;
 use App\Services\Images;
+use App\Services\Reviews;
 use App\Support\Request;
 
 final class CatalogController
@@ -35,6 +36,14 @@ final class CatalogController
     {
         Catalog::shop($id);
         return [Catalog::menus($id), 200];
+    }
+
+    public static function reviews(Request $q, int $shopId): array
+    {
+        Catalog::shop($shopId);
+        [$page, $per, $offset] = $q->page(20);
+        [$rows, $total] = Reviews::ofShop($shopId, $per, $offset);
+        return [$rows, 200, ['page' => $page, 'per_page' => $per, 'total' => $total] + Reviews::summaries([$shopId])[$shopId]];
     }
 
     public static function image(Request $q, string $key): ?array

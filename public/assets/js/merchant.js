@@ -5,7 +5,7 @@ let me = null;
 let shopId = null;
 let stop = () => {};
 
-const TABS = [['orders', 'ออเดอร์'], ['history', 'ประวัติ'], ['menus', 'เมนู'], ['settings', 'ตั้งค่าร้าน'], ['reports', 'รายงาน']];
+const TABS = [['orders', 'ออเดอร์'], ['history', 'ประวัติ'], ['menus', 'เมนู'], ['settings', 'ตั้งค่าร้าน'], ['reports', 'รายงาน'], ['reviews', 'รีวิว']];
 const current = () => TABS.find(([k]) => location.hash === '#/' + k)?.[0] || 'orders';
 
 async function start() {
@@ -35,7 +35,7 @@ function render() {
     : h('strong', {}, me.shops[0].name);
   app.replaceChildren(h('div.desk', {}, h('nav.side', { 'aria-label': 'เมนูหลัก' }, h('div.brand', {}, 'Q-im'), picker,
     TABS.map(([k, label]) => h('a', { href: '#/' + k, 'aria-current': k === tab ? 'page' : null }, label)), h('div.bottom', {}, logoutButton())), main));
-  const page = { orders, history, menus, settings, reports }[tab];
+  const page = { orders, history, menus, settings, reports, reviews }[tab];
   const load = async () => {
     try {
       await page(main);
@@ -289,6 +289,15 @@ async function history(main, page = 1) {
     h('thead', {}, h('tr', {}, ['เวลา', 'คิว', 'ออเดอร์', 'รายการ', 'สถานะ', 'ยอด'].map((t, i) => h('th' + (i === 5 ? '.num' : ''), {}, t)))),
     h('tbody', {}, data.map((o) => h('tr', {}, h('td', {}, dateTime(o.created_at)), h('td', {}, o.queue ? queueNo(o.queue.number) : '–'), h('td', {}, o.order_no), h('td', {}, lines(o)), h('td', {}, badge(o.status), o.reason ? h('div.muted', {}, o.reason) : null), h('td.num', {}, baht(o.total))))))) : empty('ยังไม่มีประวัติ'),
   h('div.row.end', {}, h('button.btn.ghost', { type: 'button', disabled: page <= 1, onclick: () => history(main, page - 1) }, 'ก่อนหน้า'), `หน้า ${page} / ${pages}`, h('button.btn.ghost', { type: 'button', disabled: page >= pages, onclick: () => history(main, page + 1) }, 'ถัดไป')));
+}
+
+async function reviews(main, page = 1) {
+  const { data, meta } = await api('GET', `/merchant/shops/${shopId}/reviews?page=${page}`);
+  const pages = Math.max(1, Math.ceil(meta.total / meta.per_page));
+  main.replaceChildren(h('h1', {}, 'รีวิว'), h('p', {}, meta.review_count ? `คะแนนเฉลี่ย ★ ${Number(meta.rating).toFixed(1)} จาก ${meta.review_count} รีวิว` : 'ยังไม่มีรีวิว'),
+    h('p.muted', {}, 'ดูได้อย่างเดียว ไม่แสดงผู้เขียน หากรีวิวไม่เหมาะสมกรุณาแจ้งผู้ดูแล'),
+    data.length ? h('div.list', {}, data.map((r) => h('article.card', {}, h('div.row.between', {}, h('b', {}, '★'.repeat(r.rating) + '☆'.repeat(5 - r.rating)), h('span.muted', {}, r.date)), r.comment ? h('p', {}, r.comment) : null))) : '',
+    h('div.row.end', {}, h('button.btn.ghost', { type: 'button', disabled: page <= 1, onclick: () => reviews(main, page - 1) }, 'ก่อนหน้า'), `หน้า ${page} / ${pages}`, h('button.btn.ghost', { type: 'button', disabled: page >= pages, onclick: () => reviews(main, page + 1) }, 'ถัดไป')));
 }
 
 // ---- Menus ------------------------------------------------------------------

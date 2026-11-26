@@ -6,6 +6,7 @@ namespace App\Controllers;
 use App\Services\Admin;
 use App\Services\Auth;
 use App\Services\Reports;
+use App\Services\Reviews;
 use App\Support\Request;
 use App\Support\Router;
 
@@ -26,6 +27,9 @@ final class AdminController
         $r->add('GET', '/admin/users', self::listing(static fn (Request $q, int $n, int $o): array => Admin::users($q->query('q'), $q->query('role'), $n, $o)));
         $r->add('GET', '/admin/orders', self::listing(static fn (Request $q, int $n, int $o): array => Admin::orders($q->query('q'), $q->query('status'), (int) $q->query('shop_id'), $n, $o)));
         $r->add('GET', '/admin/audit-logs', self::listing(static fn (Request $q, int $n, int $o): array => Admin::auditLogs($q->query('q'), mb_substr($q->query('action'), 0, 100), $n, $o)));
+
+        $r->add('GET', '/admin/reviews', self::listing(static fn (Request $q, int $n, int $o): array => Reviews::all('%' . addcslashes(mb_substr($q->query('q'), 0, 100), '\\%_') . '%', (int) $q->query('shop_id'), $n, $o)));
+        $r->add('PATCH', '/admin/reviews/{id}', self::write(static fn (int $me, array $in, int $id) => Reviews::setHidden($me, $id, $in)));
 
         $r->add('POST', '/admin/food-courts', self::write(static fn (int $me, array $in): array => Admin::saveFoodCourt($me, null, $in), 201));
         $r->add('PATCH', '/admin/food-courts/{id}', self::write(static fn (int $me, array $in, int $id): array => Admin::saveFoodCourt($me, $id, $in)));

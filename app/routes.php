@@ -35,7 +35,15 @@ return static function (Router $r): void {
     $r->add('GET', '/shops/{id}/menus', [CatalogController::class, 'menus']);
     $r->add('GET', '/images/{key}', [CatalogController::class, 'image']);
 
+    $r->add('GET', '/shops/{id}/reviews', [CatalogController::class, 'reviews']);
+
     // Customer
+    $r->add('GET', '/favorites', [CustomerController::class, 'favorites']);
+    foreach (['shops', 'menus'] as $kind) {
+        $r->add('PUT', "/favorites/$kind/{id}", CustomerController::favorite($kind, true));
+        $r->add('DELETE', "/favorites/$kind/{id}", CustomerController::favorite($kind, false));
+    }
+    $r->add('POST', '/orders/{id}/review', [CustomerController::class, 'review']);
     $r->add('GET', '/cart', [CustomerController::class, 'cart']);
     $r->add('PUT', '/cart', [CustomerController::class, 'updateCart']);
     $r->add('POST', '/orders', [CustomerController::class, 'checkout']);
@@ -58,6 +66,7 @@ return static function (Router $r): void {
     $r->add('GET', '/merchant/orders/{id}', [MerchantController::class, 'order']);
     $r->add('POST', '/merchant/orders/{id}/payment', [MerchantController::class, 'payment']);
     $r->add('POST', '/merchant/orders/{id}/complete', [MerchantController::class, 'complete']);
+    $r->add('GET', '/merchant/shops/{id}/reviews', [MerchantController::class, 'reviews']);
     $r->add('GET', '/merchant/shops/{id}/reports', [MerchantController::class, 'reports']);
     foreach (['accept', 'reject', 'prepare', 'ready', 'cancel'] as $action) {
         $r->add('POST', "/merchant/orders/{id}/$action", MerchantController::transition($action));

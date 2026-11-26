@@ -133,7 +133,6 @@ final class Orders
         $order = self::forCustomer($rows[0] ?? throw HttpError::notFound('ไม่พบออเดอร์'));
         $order += Eta::order($orderId, $order['shop']['id'], $order['status']);
         $order['can_cancel'] = $order['status'] === 'PENDING';
-        $order['pickup_code'] = substr($order['order_no'], -4);
         $order['timeline'] = array_map(
             static fn (array $l): array => ['status' => $l['to_status'], 'reason' => self::publicReason($l['to_status'], $l['reason']), 'at' => Clock::iso($l['created_at'])],
             Database::rows('SELECT to_status, reason, created_at FROM order_status_logs WHERE order_id = ? ORDER BY id', [$orderId])
@@ -171,7 +170,7 @@ final class Orders
     }
 
     /**
-     * The last four characters are the pickup code, which only the customer may show. The privacy
+     * The full order number is the pickup QR, which only the customer may show. The privacy
      * notice promises that shops see the food and notes only, so the customer's name is left out.
      */
     private static function forMerchant(array $order): array

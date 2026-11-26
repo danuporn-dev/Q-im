@@ -1,4 +1,4 @@
-import { $, STATUS, api, badge, baht, busy, changes, confirmBox, dateTime, dialog, empty, eta, failed, get, h, loading, picture, poll, post, put, queueNo, setCsrf, setPoll, time, toast } from './core.js';
+import { $, STATUS, api, badge, baht, busy, changes, confirmBox, dateTime, dialog, empty, eta, failed, get, h, loading, picture, poll, post, put, queueNo, setCsrf, setPoll, time, toast, vendor } from './core.js';
 
 const app = $('#app');
 let config = { liff_id: null, dev_login: false };
@@ -383,19 +383,20 @@ function tracking(o, redraw) {
   const headline = {
     PENDING: ['รอร้านยืนยัน', 'ระบบจะออกคิวให้เมื่อร้านรับออเดอร์'],
     ACCEPTED: [null, o.ahead === null ? '' : o.ahead ? `มี ${o.ahead} คิวก่อนหน้า` : 'ถึงคิวของคุณแล้ว'],
-    PREPARING: [null, 'ร้านกำลังทำอาหารของคุณ'],
+    PREPARING: [null, o.ahead ? `ร้านกำลังทำ มี ${o.ahead} คิวก่อนหน้า` : 'ร้านกำลังทำอาหารของคุณ'],
     READY: [null, 'อาหารพร้อมแล้ว เดินไปรับได้เลย'],
     COMPLETED: [null, 'รับอาหารเรียบร้อย ขอให้อร่อย'],
     REJECTED: ['ร้านปฏิเสธออเดอร์', o.reason || ''],
     CANCELLED: ['ออเดอร์ถูกยกเลิก', o.reason || ''],
   }[o.status];
-  const flow = ['PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'COMPLETED'];
+  // Accepting starts cooking at once; ACCEPTED is shown only for orders accepted before that change.
+  const flow = ['PENDING', ...(o.status === 'ACCEPTED' ? ['ACCEPTED'] : []), 'PREPARING', 'READY', 'COMPLETED'];
   const at = Object.fromEntries(o.timeline.map((t) => [t.status, t.at]));
   const steps = closed ? o.timeline.map((t) => t.status) : flow;
   return [
     h('section.ticket' + (closed ? '.bad' : o.status === 'READY' ? '.ready' : ''), { 'aria-live': 'polite' }, h('div', {}, o.shop.name), h('div.no', headline[0] ? { style: 'font-size:1.8rem' } : {}, headline[0] || (o.queue ? queueNo(o.queue.number) : '')), h('div', {}, headline[1]),
       ['ACCEPTED', 'PREPARING'].includes(o.status) ? h('b', {}, eta(o.eta_minutes)) : null),
-    closed ? null : h('section.card', { style: 'text-align:center' }, h('div.muted', {}, 'เลขออเดอร์'), h('div.code', { style: 'font-size:1.25rem;font-weight:700' }, o.order_no), o.status === 'COMPLETED' ? null : [h('div.muted', {}, 'รหัสรับอาหาร แจ้งร้านตอนรับ'), h('div.price', { style: 'font-size:1.9rem;letter-spacing:.15em' }, o.pickup_code)]),
+    closed ? null : h('section.card', { style: 'text-align:center' }, o.status === 'COMPLETED' ? null : [h('div', {}, h('b', {}, 'QR รับอาหาร'), h('div.muted', {}, 'ให้ร้านสแกนตอนรับอาหาร')), pickupQr(o.order_no)], h('div.muted', {}, 'เลขออเดอร์'), h('div.code', { style: 'font-size:1.25rem;font-weight:700' }, o.order_no)),
     h('section.card', {}, h('h2', {}, 'สถานะ'), h('ol.steps', {}, steps.map((s) => h('li' + (at[s] ? '.done' : ''), { 'aria-current': s === o.status ? 'step' : null }, STATUS[s][0], at[s] ? h('span.muted', {}, ' ', time(at[s])) : null)))),
     h('section.card', {}, h('h2', {}, 'รายการ'), o.items.map((i) => h('div.row.between', {}, h('span.grow', {}, `${i.quantity} × ${i.name}`, i.options.length ? h('div.muted', {}, i.options.map((x) => x.name).join(', ')) : null, i.note ? h('div.muted', {}, 'หมายเหตุ: ', i.note) : null), baht(i.line_total))), h('div.total', {}, h('span', {}, 'ยอดรวม'), h('span', {}, baht(o.total))), h('p.muted', {}, o.payment_status === 'PAID' ? '✓ ชำระแล้ว' : closed ? '' : 'ชำระที่ร้านตอนรับอาหาร')),
     o.can_cancel ? h('button.btn.danger.ghost.block', { type: 'button', onclick: async (e) => {
@@ -405,6 +406,28 @@ function tracking(o, redraw) {
       }
     } }, 'ยกเลิกออเดอร์') : ['ACCEPTED', 'PREPARING'].includes(o.status) ? h('p.muted', {}, 'ร้านรับออเดอร์แล้ว หากต้องการยกเลิกกรุณาติดต่อร้าน') : null,
   ].filter(Boolean);
+}
+
+/** The QR holds the full order number; shops see it masked, so scanning proves the customer is here. */
+const qrCache = new Map();
+function pickupQr(text) {
+  const box = h('div.qr', { role: 'img', 'aria-label': 'QR รับอาหาร' });
+  const show = (src) => box.replaceChildren(h('img', { src, alt: '', width: 232, height: 232 }));
+  if (qrCache.has(text)) {
+    show(qrCache.get(text));
+  } else {
+    box.append(h('div.spinner', { 'aria-hidden': 'true' }));
+    vendor('qrcode.js', 'qrcode').then((qrcode) => {
+      const qr = qrcode(0, 'M');
+      qr.addData(text);
+      qr.make();
+      // 232 px wide whatever the size of the code, so it scans from a phone held at arm's length.
+      const cell = Math.max(2, Math.floor(232 / (qr.getModuleCount() + 8)));
+      qrCache.set(text, qr.createDataURL(cell, cell * 4));
+      show(qrCache.get(text));
+    }).catch(() => box.replaceChildren(h('p.muted', {}, 'แสดง QR ไม่ได้ แจ้งเลขออเดอร์ด้านล่างกับร้าน')));
+  }
+  return box;
 }
 
 // ---- Profile ----------------------------------------------------------------
@@ -424,7 +447,7 @@ async function profile() {
 }
 
 async function help() {
-  frame('profile', [header('วิธีใช้งาน', '#/profile'), h('section.card', {}, h('ol', {}, ['เลือกร้านและเมนู แล้วเพิ่มลงตะกร้า', 'ยืนยันออเดอร์ ยังไม่ต้องจ่ายเงิน', 'ร้านรับออเดอร์ ระบบออกหมายเลขคิวให้อัตโนมัติ', 'เมื่อสถานะเป็นพร้อมรับ เดินไปที่ร้าน', 'แจ้งรหัสรับอาหาร ชำระเงิน แล้วรับอาหาร'].map((t) => h('li', {}, t))), h('p.muted', {}, 'เวลารอเป็นค่าประมาณ ต้องการแก้ไขหรือยกเลิกหลังร้านรับออเดอร์ กรุณาติดต่อร้านโดยตรง'))]);
+  frame('profile', [header('วิธีใช้งาน', '#/profile'), h('section.card', {}, h('ol', {}, ['เลือกร้านและเมนู แล้วเพิ่มลงตะกร้า', 'ยืนยันออเดอร์ ยังไม่ต้องจ่ายเงิน', 'ร้านรับออเดอร์ ระบบออกหมายเลขคิวให้อัตโนมัติ', 'เมื่อสถานะเป็นพร้อมรับ เดินไปที่ร้าน', 'ให้ร้านสแกน QR รับอาหาร ชำระเงิน แล้วรับอาหาร'].map((t) => h('li', {}, t))), h('p.muted', {}, 'เวลารอเป็นค่าประมาณ ต้องการแก้ไขหรือยกเลิกหลังร้านรับออเดอร์ กรุณาติดต่อร้านโดยตรง'))]);
 }
 
 /** Demo only: the outbox of this customer as a chat. Nothing is sent to LINE. */

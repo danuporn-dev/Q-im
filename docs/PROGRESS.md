@@ -10,14 +10,14 @@
 | 3 shop/menu management, discovery | เสร็จ |
 | 4 customer UI, cart, checkout | เสร็จ |
 | 5 accept/reject, queue, tracking | เสร็จ |
-| 6 prepare/ready/pickup/payment, e2e | เสร็จ |
+| 6 prepare/ready/pickup/payment, e2e | เสร็จ (ลดเหลือ 3 ขั้น + QR ตาม D31) |
 | 7 LINE | เสร็จ (LINE จำลอง; ยังไม่ทดสอบ LINE จริง) |
 | 8 admin, reports, audit | เสร็จ |
 | 9 security, concurrency, responsive, docs | เสร็จ |
 | หลัง MVP: ปิดช่องว่าง | เสร็จ |
 | เทสต์แยกบน `qim_test` | เสร็จ |
 | READY no-show (D26) | เสร็จ |
-| Audit การส่งมอบไม่ใช้รหัส (D27) | เสร็จ |
+| Audit การส่งมอบไม่สแกน QR (D27) | เสร็จ |
 | เครื่องมือสาธิต (D28, [demo.md](demo.md)) | เสร็จ (ยังไม่ซ้อมบนโทรศัพท์จริงและโปรเจกเตอร์จริง) |
 | API ลูกค้าไม่ส่งข้อมูลภายในร้าน (D29) | เสร็จ |
 | เปิดสาธิตผ่าน HTTPS proxy/ngrok (D30) | เสร็จ (proxy จำลอง; ยังไม่ทดสอบ ngrok จริง) |
@@ -35,7 +35,7 @@ C:\xampp\php\php.exe scripts\e2e.php
 ## ค้างอยู่
 
 - ทดสอบ LINE จริงตาม line-setup.md (T01, T02, T12 ผ่านกับ LINE จำลองเท่านั้น)
-- T22 ไม่ทำ เพราะ QR pickup เป็น Extension
+- T22: QR ตาม D31 คือเลขออเดอร์เต็ม ไม่ใช่ token ใช้ครั้งเดียว ออเดอร์ COMPLETED แล้วสแกนซ้ำได้ผลเดิม (idempotent) ไม่ได้ส่งมอบซ้ำ; token ที่หมดอายุยังเป็น Extension
 - UI ตรวจด้วย Chrome headless (`tests/11_browser.php`) ยังไม่ตรวจบนโทรศัพท์จริง
 - MySQL ยังไม่ได้ทดสอบ
 - ข้อจำกัดอื่นอยู่ใน deploy.md

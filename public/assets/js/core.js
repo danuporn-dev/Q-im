@@ -196,6 +196,18 @@ export function poll(task, interval = 7000) {
   return () => { stopped = true; clearTimeout(timer); document.removeEventListener('visibilitychange', wake); };
 }
 
+/** Loads a classic script from assets/js/vendor once; resolves with the global it defines. */
+const scripts = {};
+export function vendor(file, global) {
+  scripts[file] ??= new Promise((resolve, reject) => {
+    const el = h('script', { src: new URL('./vendor/' + file, import.meta.url).href });
+    el.addEventListener('load', () => resolve(window[global]));
+    el.addEventListener('error', () => { delete scripts[file]; el.remove(); reject(new Error('โหลดไม่สำเร็จ ลองใหม่อีกครั้ง')); });
+    document.head.append(el);
+  });
+  return scripts[file];
+}
+
 export const field = (label, input, hint) => h('label.field', {}, h('span', {}, label), input, hint ? h('small', {}, hint) : null);
 
 /** Login form shared by the merchant and admin pages. */

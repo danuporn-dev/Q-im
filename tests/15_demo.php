@@ -87,7 +87,7 @@ foreach ($demo as $i => $id) {
             T::ok($v['queue']['number'] >= 1 && $v['eta_minutes'] >= 1 && $v['eta_minutes'] <= 15, 'queue and ETA', $v['eta_minutes']);
         }
     }
-    $statuses[] = $m->post("$a/merchant/orders/$o/complete", ['pickup_code' => $v['pickup_code']])['status'];
+    $statuses[] = $m->post("$a/merchant/orders/$o/complete", ['pickup_qr' => $v['order_no']])['status'];
     T::eq([200, 200, 200, 200, 200], $statuses, 'accept, prepare, ready, payment, complete');
     $messages = $c->get("$a/dev/messages")['body']['data'];
     $texts = array_column(array_values(array_filter($messages, static fn (array $x): bool => $x['order_id'] === (int) $o)), 'text');
@@ -158,8 +158,8 @@ try {
     $n = $b->js('window.n');
     T::ok($n >= 1 && $n <= 3, 'offline: polling backs off', $n);
     $b->network(false);
-    $m->post("$a/merchant/orders/$o/prepare");
-    T::ok($b->sees('ร้านกำลังทำอาหารของคุณ', 20), 'back online: recovers without a reload');
+    $m->post("$a/merchant/orders/$o/ready");
+    T::ok($b->sees('อาหารพร้อมแล้ว', 20), 'back online: recovers without a reload');
 } finally {
     $b->close();
 }

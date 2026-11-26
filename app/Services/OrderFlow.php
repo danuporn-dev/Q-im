@@ -15,15 +15,20 @@ use App\Support\Input;
  */
 final class OrderFlow
 {
-    /** action => [from states, to state, reason required, notification event] */
+    /**
+     * action => [from states, to state, reason required, notification event]
+     * Shops work in three taps (D31): accept puts the order straight into the kitchen, ready, then hand-over.
+     */
     private const ACTIONS = [
-        'accept' => [['PENDING'], 'ACCEPTED', false, 'ORDER_ACCEPTED'],
+        'accept' => [['PENDING'], 'PREPARING', false, 'ORDER_ACCEPTED'],
         'reject' => [['PENDING'], 'REJECTED', true, 'ORDER_REJECTED'],
         'prepare' => [['ACCEPTED'], 'PREPARING', false, null],
-        'ready' => [['PREPARING'], 'READY', false, 'ORDER_READY'],
+        'ready' => [['ACCEPTED', 'PREPARING'], 'READY', false, 'ORDER_READY'],
         'cancel' => [['PENDING', 'ACCEPTED', 'PREPARING', 'READY'], 'CANCELLED', true, 'ORDER_CANCELLED'],
     ];
-    /** Audit action of a hand-over without the pickup code. */
+    /** States passed through on the way, so each still gets its log row and timestamp. ACCEPTED assigns the queue. */
+    private const VIA = ['PENDING>PREPARING' => ['ACCEPTED'], 'ACCEPTED>READY' => ['PREPARING']];
+    /** Audit action of a hand-over without scanning the customer's QR. */
     public const PICKUP_OVERRIDE = 'pickup.override';
     private const STAMP = ['ACCEPTED' => 'accepted_at', 'PREPARING' => 'preparing_at', 'READY' => 'ready_at', 'COMPLETED' => 'completed_at'];
 
@@ -73,10 +78,13 @@ final class OrderFlow
                 self::checkNoShow($order);
                 Audit::log($userId, 'order.no_show', 'order', $orderId, ['shop_id' => (int) $order['shop_id'], 'reason' => $reason]);
             }
-            if ($to === 'ACCEPTED') {
-                self::assignQueue($order);
+            foreach ([...(self::VIA[$order['status'] . '>' . $to] ?? []), $to] as $step) {
+                if ($step === 'ACCEPTED') {
+                    self::assignQueue($order);
+                }
+                self::move($order, $step, $userId, $step === $to ? $reason : null);
+                $order['status'] = $step;
             }
-            self::move($order, $to, $userId, $reason);
             if ($event !== null) {
                 Notifications::enqueue($orderId, (int) $order['user_id'], $event);
             }
@@ -94,11 +102,14 @@ final class OrderFlow
             if ($order['status'] !== 'READY') {
                 throw HttpError::conflict('INVALID_STATE', 'รับชำระได้เมื่ออาหารพร้อมรับ', ['status' => $order['status']]);
             }
-            Database::run("UPDATE payments SET status = 'PAID', paid_at = ?, confirmed_by = ? WHERE id = ?", [Clock::now(), $userId, $payment['id']]);
-            Audit::log($userId, 'payment.confirm', 'order', $orderId, ['amount' => $order['total']]);
+            self::markPaid($userId, $order, (int) $payment['id']);
         });
     }
 
+    /**
+     * Hand-over. The QR on the customer's screen holds the full order number, which shops only see
+     * masked. payment_received: true confirms the money in the same step, so the shop taps once.
+     */
     public static function complete(int $userId, int $orderId, array $in): void
     {
         Database::tx(static function () use ($userId, $orderId, $in): void {
@@ -109,21 +120,34 @@ final class OrderFlow
             if ($order['status'] !== 'READY') {
                 throw HttpError::conflict('INVALID_STATE', 'ส่งมอบได้เมื่ออาหารพร้อมรับ', ['status' => $order['status']]);
             }
-            if (Database::value('SELECT status FROM payments WHERE order_id = ?', [$orderId]) !== 'PAID') {
+            $payment = Database::row('SELECT id, status FROM payments WHERE order_id = ? FOR UPDATE', [$orderId]);
+            if ($payment['status'] !== 'PAID' && ($in['payment_received'] ?? false) !== true) {
                 throw HttpError::conflict('PAYMENT_REQUIRED', 'ต้องยืนยันการชำระเงินก่อนส่งมอบ');
             }
-            $code = Input::optionalText($in, 'pickup_code', 'รหัสรับอาหาร', 4);
+            $scan = Input::optionalText($in, 'pickup_qr', 'QR รับอาหาร', 32);
             $reason = null;
-            if ($code !== null) {
-                if (!hash_equals(substr($order['public_order_no'], -4), strtoupper($code))) {
-                    throw new HttpError(422, 'PICKUP_CODE_WRONG', 'รหัสรับอาหารไม่ตรงกับออเดอร์นี้');
+            if ($scan !== null) {
+                if (!hash_equals($order['public_order_no'], strtoupper($scan))) {
+                    throw new HttpError(422, 'PICKUP_QR_WRONG', 'QR ไม่ตรงกับออเดอร์นี้');
                 }
             } else {
-                $reason = 'รับโดยไม่ใช้รหัส: ' . Input::text($in, 'override_reason', 'รหัสรับอาหารหรือเหตุผล', 300, 3);
+                $reason = 'รับโดยไม่สแกน QR: ' . Input::text($in, 'override_reason', 'QR รับอาหารหรือเหตุผล', 300, 3);
+            }
+            if ($payment['status'] !== 'PAID') {
+                self::markPaid($userId, $order, (int) $payment['id']);
+            }
+            if ($reason !== null) {
                 Audit::log($userId, self::PICKUP_OVERRIDE, 'order', $orderId, ['shop_id' => (int) $order['shop_id'], 'reason' => $reason]);
             }
             self::move($order, 'COMPLETED', $userId, $reason);
         });
+    }
+
+    /** The caller holds the order and payment row locks. */
+    private static function markPaid(int $userId, array $order, int $paymentId): void
+    {
+        Database::run("UPDATE payments SET status = 'PAID', paid_at = ?, confirmed_by = ? WHERE id = ?", [Clock::now(), $userId, $paymentId]);
+        Audit::log($userId, 'payment.confirm', 'order', (int) $order['id'], ['amount' => $order['total']]);
     }
 
     /** The order row is locked, and payments are only confirmed under that lock, so the check stays true until commit. */

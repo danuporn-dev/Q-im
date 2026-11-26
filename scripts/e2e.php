@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 // Usage: php scripts/e2e.php
 // Development only. Runs one whole order over real HTTP on the throw-away qim_test:
-// merchant sets up the menu, customer orders, accept, prepare, ready, pay, complete, history, report.
+// merchant sets up the menu, customer orders, accept (cooking starts), ready, scan the QR and collect the money, history, report.
 
 require dirname(__DIR__) . '/tests/lib.php';
 require dirname(__DIR__) . '/tests/fixture.php';
@@ -36,15 +36,14 @@ try {
 
     $board = $m->get("$a/merchant/shops/{$s['shop']}/orders")['body']['data'];
     T::eq(['ไม่ใส่หอม', 'เผ็ด'], [$board[0]['items'][0]['note'], $board[0]['items'][0]['options'][0]['name']], 'merchant sees note and option');
-    foreach (['accept' => 'ACCEPTED', 'prepare' => 'PREPARING', 'ready' => 'READY'] as $action => $status) {
+    foreach (['accept' => 'PREPARING', 'ready' => 'READY'] as $action => $status) {
         T::status(200, $m->post("$a/merchant/orders/$o/$action"), $action);
         $view = $c->get("$a/orders/$o")['body']['data'];
         T::eq($status, $view['status'], "customer sees $status");
         T::eq(1, $view['queue']['number'], 'queue number stays');
     }
-    T::status(409, $m->post("$a/merchant/orders/$o/complete", ['pickup_code' => $view['pickup_code']]), 'cannot complete unpaid', 'PAYMENT_REQUIRED');
-    T::status(200, $m->post("$a/merchant/orders/$o/payment"), 'payment');
-    T::status(200, $m->post("$a/merchant/orders/$o/complete", ['pickup_code' => $view['pickup_code']]), 'complete');
+    T::status(409, $m->post("$a/merchant/orders/$o/complete", ['pickup_qr' => $view['order_no']]), 'cannot complete unpaid', 'PAYMENT_REQUIRED');
+    T::status(200, $m->post("$a/merchant/orders/$o/complete", ['pickup_qr' => $view['order_no'], 'payment_received' => true]), 'scan the QR and collect the money');
     $view = $c->get("$a/orders/$o")['body']['data'];
     T::eq(['COMPLETED', 'PAID', 5], [$view['status'], $view['payment_status'], count($view['timeline'])], 'customer history is complete');
     T::eq('75.00', $m->get("$a/merchant/shops/{$s['shop']}/reports")['body']['data']['sales'], 'report');

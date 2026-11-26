@@ -25,7 +25,7 @@ $shown = static function (array $shop) use ($admin, $a): mixed {
     return $admin->get("$a/admin/shops?q=" . rawurlencode($name))['body']['data'][0]['pickup_overrides'] ?? null;
 };
 
-T::group('T17 hand-over without the code');
+T::group('T17 hand-over without the QR');
 [, $o] = $paid('a', $s, $m);
 T::eq([0, 0], [$shown($s), $shown($s2)], 'counts start at zero');
 foreach ([[], ['override_reason' => ''], ['override_reason' => 'ab'], ['override_reason' => ['x']]] as $body) {
@@ -41,8 +41,8 @@ $meta = json_decode($row['safe_metadata'], true);
 T::eq([$s['user'], $s['shop'], true], [$row['actor_user_id'], $meta['shop_id'], str_contains($meta['reason'], 'โทรศัพท์แบตหมด')], 'actor, shop and reason');
 
 [$c, $normal] = $paid('b', $s, $m);
-$m->post("$a/merchant/orders/$normal/complete", ['pickup_code' => $c->get("$a/orders/$normal")['body']['data']['pickup_code']]);
-T::eq(['COMPLETED', 0], [Database::value('SELECT status FROM orders WHERE id = ?', [$normal]), $count($normal)], 'hand-over with the code is not an override');
+$m->post("$a/merchant/orders/$normal/complete", ['pickup_qr' => $c->get("$a/orders/$normal")['body']['data']['order_no']]);
+T::eq(['COMPLETED', 0], [Database::value('SELECT status FROM orders WHERE id = ?', [$normal]), $count($normal)], 'hand-over with the QR is not an override');
 [, $p] = $paid('c', $s, $m);
 $ports = [Servers::start(8261, ['RATE_LIMIT_MULTIPLIER' => '1000']), Servers::start(8262, ['RATE_LIMIT_MULTIPLIER' => '1000'])];
 parallel(array_map(static fn ($b) => [$m, 'POST', "$a/merchant/orders/$p/complete", ['override_reason' => 'พร้อมกัน'], $b], $ports));

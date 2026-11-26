@@ -103,7 +103,7 @@ async function shops(main) {
       }, '.danger')))) : h('p.muted', {}, 'ยังไม่มีสมาชิก'), field('เพิ่มสมาชิกด้วยชื่อผู้ใช้ร้านค้า', login)], () => post(`/admin/shops/${shop.id}/members`, { login: login.value.trim() }), 'เพิ่ม');
     if (saved) await reload();
   };
-  await listing(main, 'ร้าน', '/admin/shops', [], (data, reload) => table(['ร้าน', 'โรงอาหาร', 'สถานะ', 'รับออเดอร์', '#ออเดอร์ค้าง', '#ส่งมอบไม่ใช้รหัส', 'สมาชิก', ''], data.map((s) => h('tr', {}, h('td', {}, s.name), h('td', {}, s.food_court), h('td', {}, onOff(s.active)), h('td', {}, onOff(s.accepting_orders, 'เปิด', 'หยุด')), h('td.num', {}, s.active_orders), h('td.num', {}, s.pickup_overrides), h('td', {}, s.members.map((m) => m.display_name).join(', ') || '–'), h('td', {}, h('div.row', {}, ghost('แก้ไข', () => edit(s, reload)), ghost('สมาชิก', () => members(s, reload))))))),
+  await listing(main, 'ร้าน', '/admin/shops', [], (data, reload) => table(['ร้าน', 'โรงอาหาร', 'สถานะ', 'รับออเดอร์', '#ออเดอร์ค้าง', '#ส่งมอบไม่สแกน QR', 'สมาชิก', ''], data.map((s) => h('tr', {}, h('td', {}, s.name), h('td', {}, s.food_court), h('td', {}, onOff(s.active)), h('td', {}, onOff(s.accepting_orders, 'เปิด', 'หยุด')), h('td.num', {}, s.active_orders), h('td.num', {}, s.pickup_overrides), h('td', {}, s.members.map((m) => m.display_name).join(', ') || '–'), h('td', {}, h('div.row', {}, ghost('แก้ไข', () => edit(s, reload)), ghost('สมาชิก', () => members(s, reload))))))),
     [(reload) => h('button.btn', { type: 'button', onclick: () => edit(null, reload) }, 'เพิ่มร้าน')]);
 }
 
@@ -155,7 +155,7 @@ async function reports(main, from = today(), to = today()) {
       h('h2', {}, 'ตามวัน'), table(['วันที่', '#ออเดอร์', '#ยอด'], r.by_day.map((d) => h('tr', {}, h('td', {}, d.day), h('td.num', {}, d.orders), h('td.num', {}, baht(d.sales)))))) : empty('ไม่มียอดขายในช่วงนี้'));
 }
 
-const AUDIT = { 'pickup.override': 'ส่งมอบไม่ใช้รหัส', 'order.no_show': 'ลูกค้าไม่มารับ', 'payment.confirm': 'ยืนยันชำระเงิน', 'auth.login': 'เข้าสู่ระบบ' };
+const AUDIT = { 'pickup.override': 'ส่งมอบไม่สแกน QR', 'order.no_show': 'ลูกค้าไม่มารับ', 'payment.confirm': 'ยืนยันชำระเงิน', 'auth.login': 'เข้าสู่ระบบ' };
 const audit = (main) => listing(main, 'บันทึกการใช้งาน', '/admin/audit-logs', [h('select', { name: 'action', 'aria-label': 'ประเภท' }, h('option', { value: '' }, 'ทุกประเภท'), Object.entries(AUDIT).map(([k, v]) => h('option', { value: k }, v)))], (data) => table(['เวลา', 'ผู้ทำ', 'การกระทำ', 'ข้อมูล', 'รายละเอียด'], data.map((l) => h('tr', {}, h('td', {}, dateTime(l.created_at)), h('td', {}, l.actor || 'ระบบ'), h('td', {}, AUDIT[l.action] || l.action), h('td', {}, `${l.entity_type} ${l.entity_id ?? ''}`), h('td', {}, l.safe_metadata || '')))));
 
 async function settings(main) {

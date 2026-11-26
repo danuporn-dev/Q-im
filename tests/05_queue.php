@@ -21,18 +21,21 @@ T::eq([$o], array_column($r['body']['data'], 'id'), 'new order on the board');
 T::ok(!str_contains($r['raw'], substr(Database::value('SELECT public_order_no FROM orders WHERE id = ?', [$o]), -4) . '"'), 'pickup code hidden from merchant');
 $r = $m->post("$a/merchant/orders/$o/accept");
 T::status(200, $r, 'accept');
-T::eq(['ACCEPTED', 1, Clock::businessDate()], [$r['body']['data']['status'], $r['body']['data']['queue']['number'], $r['body']['data']['queue']['business_date']], 'queue assigned');
-T::eq([1, 1], [$logs($o, 'ACCEPTED'), $notes($o, 'ORDER_ACCEPTED')], 'log and notification saved');
-$row = Database::row('SELECT l.actor_user_id, l.from_status, o.accepted_at FROM order_status_logs l JOIN orders o ON o.id = l.order_id WHERE o.id = ? ORDER BY l.id DESC LIMIT 1', [$o]);
-T::eq([$s['user'], 'PENDING', true], [$row['actor_user_id'], $row['from_status'], $row['accepted_at'] !== null], 'actor, from state, timestamp');
+T::eq(['PREPARING', 1, Clock::businessDate()], [$r['body']['data']['status'], $r['body']['data']['queue']['number'], $r['body']['data']['queue']['business_date']], 'queue assigned, cooking starts at once (D31)');
+T::eq([1, 1, 1], [$logs($o, 'ACCEPTED'), $logs($o, 'PREPARING'), $notes($o, 'ORDER_ACCEPTED')], 'both logs and one notification saved');
+$rows = Database::rows('SELECT l.actor_user_id, l.from_status, l.to_status, o.accepted_at, o.preparing_at FROM order_status_logs l JOIN orders o ON o.id = l.order_id WHERE o.id = ? AND l.from_status IS NOT NULL ORDER BY l.id', [$o]);
+T::eq([[$s['user'], 'PENDING', 'ACCEPTED'], [$s['user'], 'ACCEPTED', 'PREPARING'], true], [
+    [$rows[0]['actor_user_id'], $rows[0]['from_status'], $rows[0]['to_status']], [$rows[1]['actor_user_id'], $rows[1]['from_status'], $rows[1]['to_status']],
+    $rows[0]['accepted_at'] !== null && $rows[0]['preparing_at'] !== null,
+], 'actor, from states, timestamps');
 $view = $c->get("$a/orders/$o")['body']['data'];
 T::eq([0, 6, 1, false], [$view['ahead'], $view['eta_minutes'], $view['queue']['number'], $view['can_cancel']], 'customer sees queue, ahead, ETA');
 
 T::group('T13 invalid transitions and repeats');
 T::status(200, $m->post("$a/merchant/orders/$o/accept"), 'repeat accept is safe');
-T::eq([1, 1, 1], [$logs($o, 'ACCEPTED'), $notes($o, 'ORDER_ACCEPTED'), (int) Database::value('SELECT COUNT(*) FROM queues WHERE order_id = ?', [$o])], 'no duplicate side effects');
-T::status(409, $m->post("$a/merchant/orders/$o/ready"), 'ACCEPTED -> READY', 'INVALID_STATE');
-T::status(409, $m->post("$a/merchant/orders/$o/reject", ['reason' => 'x']), 'ACCEPTED -> REJECTED', 'INVALID_STATE');
+T::status(200, $m->post("$a/merchant/orders/$o/prepare"), 'prepare after accept is a safe repeat');
+T::eq([1, 1, 1, 1], [$logs($o, 'ACCEPTED'), $logs($o, 'PREPARING'), $notes($o, 'ORDER_ACCEPTED'), (int) Database::value('SELECT COUNT(*) FROM queues WHERE order_id = ?', [$o])], 'no duplicate side effects');
+T::status(409, $m->post("$a/merchant/orders/$o/reject", ['reason' => 'x']), 'PREPARING -> REJECTED', 'INVALID_STATE');
 T::status(409, $c->post("$a/orders/$o/cancel"), 'customer cannot cancel after accept', 'INVALID_STATE');
 T::status(422, $m->post("$a/merchant/orders/$o/cancel"), 'merchant cancel needs a reason');
 T::status(404, $m->post("$a/merchant/orders/999999999/accept"), 'unknown order');
@@ -61,14 +64,21 @@ foreach (['accept', 'reject', 'prepare', 'ready', 'cancel'] as $x) {
 T::status(404, $m2->get("$a/merchant/orders/$o"), 'other shop read');
 T::status(404, $m2->get("$a/merchant/shops/{$s['shop']}/orders"), 'other shop list');
 T::status(401, $c->post("$a/merchant/orders/$o/prepare"), 'customer session cannot act as merchant');
-T::eq('ACCEPTED', $status($o), 'order untouched');
+T::eq('PREPARING', $status($o), 'order untouched');
 
 T::group('Queue position and ETA');
 [$c3, $o3] = $place('c');
 $m->post("$a/merchant/orders/$o3/accept");
 $v = $c3->get("$a/orders/$o3")['body']['data'];
 T::eq(1, $v['ahead'], 'cancelled queue numbers are not counted (number ' . $v['queue']['number'] . ')');
-T::eq(9, $v['eta_minutes'], 'ceil(6 / capacity 2) + 6');
+T::eq(6, $v['eta_minutes'], 'within capacity 2: cooks alongside the first order');
+[$c5, $o5] = $place('c5');
+$m->post("$a/merchant/orders/$o5/accept");
+$v = $c5->get("$a/orders/$o5")['body']['data'];
+T::eq([2, 12], [$v['ahead'], $v['eta_minutes']], 'beyond capacity: ceil((6 + 6) / 2) + 6');
+Database::run('UPDATE orders SET preparing_at = ? WHERE id = ?', [gmdate('Y-m-d H:i:s', time() - 7200), $o5]);
+T::eq(12, $c5->get("$a/orders/$o5")['body']['data']['eta_minutes'], 'a waiting order does not count down before a slot is free');
+$m->post("$a/merchant/orders/$o5/cancel", ['reason' => 'ทดสอบ']);
 $shopView = (new Client($base))->get("$a/shops/{$s['shop']}")['body']['data'];
 T::eq([2, 11], [$shopView['waiting'], $shopView['eta_minutes']], 'shop summary');
 Database::update('shops', $s['shop'], ['capacity' => null]);
@@ -76,6 +86,7 @@ T::eq(null, $c3->get("$a/orders/$o3")['body']['data']['eta_minutes'], 'no capaci
 Database::update('shops', $s['shop'], ['capacity' => 2]);
 Database::run("UPDATE orders SET status = 'PREPARING', preparing_at = ? WHERE id = ?", [gmdate('Y-m-d H:i:s', time() - 7200), $o]);
 T::eq(1, $c->get("$a/orders/$o")['body']['data']['eta_minutes'], 'overdue ETA is never negative');
+// Back to an order accepted before D31, which still waits in ACCEPTED.
 Database::run("UPDATE orders SET status = 'ACCEPTED', preparing_at = NULL WHERE id = ?", [$o]);
 
 T::group('T07 concurrent accepts: 24 orders, 48 requests (2 per order) on 8 server processes');
@@ -116,6 +127,6 @@ $late = Fixture::login($tomorrow, 'merchant', $s['login']);
 $r = $late->post("$a/merchant/orders/$o4/accept");
 T::eq([1, Clock::bangkok()->modify('+1 day')->format('Y-m-d')], [$r['body']['data']['queue']['number'] ?? null, $r['body']['data']['queue']['business_date'] ?? null], 'new date starts at 1');
 T::eq(2, $c4->get("$a/orders/$o4")['body']['data']['ahead'], 'yesterday\'s open orders are ahead');
-T::status(200, $late->post("$a/merchant/orders/$o/prepare"), 'old order still manageable');
 T::ok(in_array($o, array_column($late->get("$a/merchant/shops/{$s['shop']}/orders")['body']['data'], 'id'), true), 'old order still on the board');
-T::eq('PREPARING', $status($o), 'old order moved on');
+T::status(200, $late->post("$a/merchant/orders/$o/ready"), 'old ACCEPTED order goes to READY in one tap');
+T::eq(['READY', 2, true], [$status($o), $logs($o, 'PREPARING'), Database::value('SELECT preparing_at FROM orders WHERE id = ?', [$o]) !== null], 'old order moved on through PREPARING');

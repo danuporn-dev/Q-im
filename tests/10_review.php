@@ -129,20 +129,20 @@ $log = static fn (int $id, string $to) => (int) Database::value('SELECT COUNT(*)
 $mixed = array_column(parallel([[$m, 'POST', "$a/merchant/orders/$ox/accept", [], $eight[0]], [$cx, 'POST', "$a/orders/$ox/cancel", [], $eight[1]]]), 'status');
 sort($mixed);
 $final = Database::value('SELECT status FROM orders WHERE id = ?', [$ox]);
-T::eq([[200, 409], $final === 'ACCEPTED' ? 1 : 0], [$mixed, (int) Database::value('SELECT COUNT(*) FROM queues WHERE order_id = ?', [$ox])], "accept against customer cancel: one wins ($final)");
+T::eq([[200, 409], $final === 'PREPARING' ? 1 : 0], [$mixed, (int) Database::value('SELECT COUNT(*) FROM queues WHERE order_id = ?', [$ox])], "accept against customer cancel: one wins ($final)");
 [$cy, $oy] = Fixture::order($base, 'rev_y', $s);
 foreach (['accept' => 'ACCEPTED', 'prepare' => 'PREPARING', 'ready' => 'READY'] as $action => $to) {
     $codes = array_unique(array_column(parallel($all("merchant/orders/$oy/$action")), 'status'));
     T::eq([[200], 1], [array_values($codes), $log($oy, $to)], "6 parallel $action: one change");
 }
 T::eq(1, (int) Database::value("SELECT COUNT(*) FROM notifications WHERE order_id = ? AND event_type = 'ORDER_READY'", [$oy]), 'one READY notification');
-$code = $cy->get("$a/orders/$oy")['body']['data']['pickup_code'];
-$race = parallel([[$m, 'POST', "$a/merchant/orders/$oy/complete", ['pickup_code' => $code], $eight[0]], [$m, 'POST', "$a/merchant/orders/$oy/payment", [], $eight[1]]]);
+$code = $cy->get("$a/orders/$oy")['body']['data']['order_no'];
+$race = parallel([[$m, 'POST', "$a/merchant/orders/$oy/complete", ['pickup_qr' => $code], $eight[0]], [$m, 'POST', "$a/merchant/orders/$oy/payment", [], $eight[1]]]);
 T::eq(200, $race[1]['status'], 'payment wins its race');
 T::ok(in_array($race[0]['status'], [200, 409], true), 'complete is either after payment or refused');
 $codes = array_unique(array_column(parallel($all("merchant/orders/$oy/payment")), 'status'));
 T::eq([[200], 1], [array_values($codes), (int) Database::value("SELECT COUNT(*) FROM audit_logs WHERE action = 'payment.confirm' AND entity_id = ?", [$oy])], 'one payment confirmation');
-$codes = array_unique(array_column(parallel($all("merchant/orders/$oy/complete", ['pickup_code' => $code])), 'status'));
+$codes = array_unique(array_column(parallel($all("merchant/orders/$oy/complete", ['pickup_qr' => $code])), 'status'));
 T::eq([[200], 1], [array_values($codes), $log($oy, 'COMPLETED')], '6 parallel complete: one change');
 $p = Database::row('SELECT status, amount, confirmed_by FROM payments WHERE order_id = ?', [$oy]);
 T::eq(['PAID', '45.00', $s['user']], [$p['status'], $p['amount'], $p['confirmed_by']], 'payment amount and actor');

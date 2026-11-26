@@ -50,8 +50,11 @@ final class Eta
         );
         foreach ($jobs as $job) {
             $shop = &$result[(int) $job['shop_id']];
+            // Accepting starts PREPARING at once (D31), but orders beyond the capacity still wait for a free
+            // slot, so their time is not counted down yet.
+            $cooking = $shop['capacity'] === null || $shop['waiting'] < $shop['capacity'];
             $shop['waiting']++;
-            $shop['jobs'][] = ['id' => (int) $job['id'], 'status' => $job['status'], 'minutes' => self::remaining($job, $shop['avg'])];
+            $shop['jobs'][] = ['id' => (int) $job['id'], 'status' => $job['status'], 'minutes' => self::remaining($job, $shop['avg'], $cooking)];
             unset($shop);
         }
         foreach ($result as &$shop) {
@@ -71,24 +74,25 @@ final class Eta
         $ahead = [];
         foreach ($shop['jobs'] as $job) {
             if ($job['id'] === $orderId) {
-                // Once cooking has started, earlier orders no longer delay this one.
-                $before = $status === 'PREPARING' ? 0 : self::backlog($ahead, $shop['capacity']);
+                // Up to `capacity` orders cook side by side; a later one waits for the backlog ahead of it.
+                $sideBySide = $ahead === [] || ($shop['capacity'] !== null && count($ahead) < $shop['capacity']);
+                $before = $sideBySide ? 0 : self::backlog($ahead, $shop['capacity']);
                 $eta = $before === null || $job['minutes'] === null ? null : $before + $job['minutes'];
-                return ['ahead' => $status === 'PREPARING' ? 0 : count($ahead), 'eta_minutes' => $eta];
+                return ['ahead' => count($ahead), 'eta_minutes' => $eta];
             }
             $ahead[] = $job;
         }
         return ['ahead' => null, 'eta_minutes' => null];
     }
 
-    private static function remaining(array $job, ?int $avg): ?int
+    private static function remaining(array $job, ?int $avg, bool $cooking): ?int
     {
         if ((int) $job['unknown_items'] > 0 && $avg === null) {
             return null;
         }
         $longest = max((int) $job['longest'], (int) $job['unknown_items'] > 0 ? $avg : 0);
         $minutes = $longest + (int) $job['quantity'] - 1;
-        if ($job['preparing_at'] !== null) {
+        if ($cooking && $job['preparing_at'] !== null) {
             $minutes -= intdiv(Clock::timestamp() - strtotime($job['preparing_at'] . ' UTC'), 60);
         }
         return max(1, $minutes);

@@ -120,6 +120,9 @@ button.item:hover:not(:disabled), a.item:hover { border-color: #9cc3ac; }
 .steps li::before { content: ""; position: absolute; left: 4px; top: 4px; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #b8c6be; background: #fff; }
 .steps li:not(:last-child)::after { content: ""; position: absolute; left: 11px; top: 22px; bottom: 0; width: 2px; background: var(--line); }
 .steps li.done { color: var(--ink); }
+.qr { width: 232px; max-width: 100%; aspect-ratio: 1; margin: .6rem auto; display: grid; place-items: center; background: #fff; border-radius: 10px; }
+.qr img { width: 100%; height: auto; image-rendering: pixelated; }
+video.scan { display: block; width: 100%; max-height: 50dvh; aspect-ratio: 4 / 3; object-fit: cover; background: #10221a; border-radius: 12px; margin: .4rem 0; }
 .steps li.done::before { background: var(--green); border-color: var(--green); }
 .steps li[aria-current] { font-weight: 700; color: var(--green-dark); }
 
@@ -139,7 +142,7 @@ button.item:hover:not(:disabled), a.item:hover { border-color: #9cc3ac; }
 .side .btn.ghost { color: #dcebe2; border-color: #3a5a49; width: 100%; }
 .side .btn.ghost:hover { background: #1c3a2a; }
 .main { padding: 1.2rem; min-width: 0; }
-.board { display: grid; grid-template-columns: repeat(4, minmax(230px, 1fr)); gap: .9rem; align-items: start; overflow-x: auto; padding-bottom: .5rem; }
+.board { display: grid; grid-template-columns: repeat(3, minmax(230px, 1fr)); gap: .9rem; align-items: start; overflow-x: auto; padding-bottom: .5rem; }
 .col { background: #e9f0ec; border-radius: var(--radius); padding: .7rem; min-height: 180px; }
 .col > h2 { display: flex; justify-content: space-between; padding: 0 .2rem; }
 .col .list { gap: .6rem; }
@@ -170,10 +173,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .side a { padding: .6rem .7rem; }
   .side .bottom { margin: 0 0 0 auto; }
   .main { padding: 1rem 16px; }
-  .board { grid-template-columns: repeat(4, minmax(80vw, 1fr)); scroll-snap-type: x proximity; }
+  .board { grid-template-columns: repeat(3, minmax(80vw, 1fr)); scroll-snap-type: x proximity; }
   .col { scroll-snap-align: start; }
 }
-@media (min-width: 560px) and (max-width: 860px) { .board { grid-template-columns: repeat(4, minmax(300px, 1fr)); } }
+@media (min-width: 560px) and (max-width: 860px) { .board { grid-template-columns: repeat(3, minmax(300px, 1fr)); } }
 @media (min-width: 560px) { .hero { height: 15rem; } }
 /* Projectors */
 @media (min-width: 1600px) { html { font-size: 125%; } .desk .pic { width: 5.5rem; height: 5.5rem; } }

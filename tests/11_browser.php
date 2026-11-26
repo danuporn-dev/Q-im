@@ -39,7 +39,7 @@ try {
     $b->open("$base/customer/#/cart");
     T::ok($b->sees('ยืนยันออเดอร์ ฿45'), 'cart page with total');
     $b->js("{const q=[...document.querySelectorAll('button')].find(e=>e.innerText.startsWith('ยืนยันออเดอร์'));q.click();q.click();q.click();}");
-    T::ok($b->sees('รหัสรับอาหาร'), 'tracking page after checkout');
+    T::ok($b->sees('QR รับอาหาร') && $b->until("document.querySelector('.qr img')?.naturalWidth > 0"), 'tracking page after checkout');
     T::eq(1, (int) Database::value('SELECT COUNT(*) FROM orders WHERE shop_id = ?', [$s['shop']]), 'triple click makes one order');
     $order = (int) Database::value('SELECT id FROM orders WHERE shop_id = ?', [$s['shop']]);
     $b->send('Page.reload');
@@ -106,6 +106,23 @@ try {
     $b->click('ยกเลิกออเดอร์', $dialog);
     T::ok($b->until("!document.body.innerText.includes('พร้อมรับมา 21 นาที')"), 'no-show button cancels the order on the board');
     T::eq(['CANCELLED', 'ติดต่อลูกค้าไม่ได้'], [Database::value('SELECT status FROM orders WHERE id = ?', [$ready]), Database::value('SELECT reason FROM order_status_logs WHERE order_id = ? ORDER BY id DESC LIMIT 1', [$ready])], 'saved with its reason');
+
+    T::group('T17 hand-over dialog: scanner or typed order number (no camera here)');
+    [$cq, $handover] = Fixture::order($base, 'ui_qr', $s);
+    foreach (['accept', 'ready'] as $x) {
+        $m->post("/api/v1/merchant/orders/$handover/$x");
+    }
+    $qr = $cq->get("/api/v1/orders/$handover")['body']['data']['order_no'];
+    T::ok(!$b->sees('รับเงิน ฿', 1) && !$b->sees('เริ่มทำ', 0.5), 'no separate payment or start buttons');
+    $b->click('ส่งมอบ');
+    T::ok($b->sees('สแกนสำเร็จ = รับเงินและส่งมอบแล้ว') && $b->sees('ถ่ายรูป QR'), 'dialog shows the money to collect and the fallbacks');
+    $b->fill('dialog input[name=pickup_qr]', substr($qr, 0, -1) . 'Z');
+    $b->click('ตรวจ', $dialog);
+    T::ok($b->sees('QR ไม่ตรงกับออเดอร์นี้'), 'wrong number is refused');
+    $b->fill('dialog input[name=pickup_qr]', $qr);
+    $b->click('ตรวจ', $dialog);
+    T::ok($b->sees('ส่งมอบเรียบร้อย') && $b->until('!document.querySelector("dialog")'), 'right number completes the hand-over');
+    T::eq(['COMPLETED', 'PAID'], [Database::value('SELECT status FROM orders WHERE id = ?', [$handover]), Database::value('SELECT status FROM payments WHERE order_id = ?', [$handover])], 'completed and paid in one step');
     foreach ([390, 768, 1280, 1920] as $width) {
         $b->size($width);
         $bad = [];
@@ -136,7 +153,7 @@ try {
         T::eq([], $bad, "admin pages fit $width px");
     }
     $b->js("location.hash='#/shops'");
-    T::ok($b->sees('ส่งมอบไม่ใช้รหัส'), 'admin shops show the hand-over count');
+    T::ok($b->sees('ส่งมอบไม่สแกน QR'), 'admin shops show the hand-over count');
     $b->js("location.hash='#/audit'");
     $b->until("document.querySelector('select[name=action]')");
     $b->js("document.querySelector('select[name=action]').value='order.no_show'");

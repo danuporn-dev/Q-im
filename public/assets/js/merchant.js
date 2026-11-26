@@ -1,4 +1,4 @@
-import { $, api, askReason, badge, baht, busy, changes, dateTime, dialog, empty, failed, field, get, h, loading, loginForm, patch, picture, poll, post, queueNo, setCsrf, setPoll, time, toast, today } from './core.js';
+import { $, api, askReason, badge, baht, busy, changes, dateTime, dialog, empty, failed, field, get, h, loading, loginForm, patch, picture, poll, post, queueNo, setCsrf, setPoll, time, toast, today, vendor } from './core.js';
 
 const app = $('#app');
 let me = null;
@@ -67,8 +67,9 @@ async function orders(main) {
       h('span.badge.' + (shop.is_open ? 'open' : 'bad'), {}, shop.is_open ? 'เปิดรับออเดอร์' : shop.accepting_orders ? 'นอกเวลาเปิด' : 'หยุดรับออเดอร์'),
       h('button.btn' + (shop.accepting_orders ? '.ghost' : ''), { type: 'button', onclick: (e) => busy(e.currentTarget, async () => { await patch(`/merchant/shops/${shopId}/settings`, { accepting_orders: !shop.accepting_orders }); await draw(); }) }, shop.accepting_orders ? 'หยุดรับชั่วคราว' : 'เปิดรับออเดอร์'),
     );
-    board.replaceChildren(...[['PENDING', 'ใหม่'], ['ACCEPTED', 'รอทำ'], ['PREPARING', 'กำลังทำ'], ['READY', 'พร้อมรับ']].map(([s, label]) => {
-      const items = list.filter((o) => o.status === s);
+    // Three taps (D31): รับออเดอร์ puts the order straight into กำลังทำ; ACCEPTED only remains on older orders.
+    board.replaceChildren(...[[['PENDING'], 'ใหม่'], [['ACCEPTED', 'PREPARING'], 'กำลังทำ'], [['READY'], 'พร้อมรับ']].map(([states, label]) => {
+      const items = list.filter((o) => states.includes(o.status));
       return h('section.col', { 'aria-label': label }, h('h2', {}, label, h('span', {}, items.length)), items.length ? h('div.list', {}, items.map((o) => card(o, draw, shop.ready_alert_minutes))) : h('p.muted', {}, 'ไม่มีออเดอร์'));
     }));
   };
@@ -107,11 +108,12 @@ function card(o, refresh, readyAlert) {
     if (reason) await act(action, { reason })({ currentTarget: target });
   };
   const waited = Math.floor((Date.now() - new Date(o.created_at)) / 60000);
+  const cooking = () => [button('อาหารพร้อม', act('ready')), button('ยกเลิก', reasoned('cancel', 'ยกเลิกออเดอร์ที่กำลังทำ', 'ยกเลิกออเดอร์', ['วัตถุดิบหมด', 'อุปกรณ์ขัดข้อง', 'ลูกค้าขอยกเลิก']), '.danger.ghost')];
   const buttons = {
     PENDING: () => [button('รับออเดอร์', act('accept')), button('ปฏิเสธ', reasoned('reject', 'ปฏิเสธออเดอร์', 'ปฏิเสธ', ['วัตถุดิบหมด', 'ร้านกำลังจะปิด', 'ออเดอร์เต็ม']), '.danger.ghost')],
-    ACCEPTED: () => [button('เริ่มทำ', act('prepare')), button('ยกเลิก', reasoned('cancel', 'ยกเลิกออเดอร์', 'ยกเลิกออเดอร์', ['วัตถุดิบหมด', 'ลูกค้าขอยกเลิก']), '.danger.ghost')],
-    PREPARING: () => [button('อาหารพร้อม', act('ready')), button('ยกเลิก', reasoned('cancel', 'ยกเลิกออเดอร์ที่กำลังทำ', 'ยกเลิกออเดอร์', ['อุปกรณ์ขัดข้อง', 'ลูกค้าขอยกเลิก']), '.danger.ghost')],
-    READY: () => [o.payment_status === 'PAID' ? button('ส่งมอบ', (e) => pickup(o, refresh, e.currentTarget)) : button(`รับเงิน ${baht(o.total)}`, act('payment')),
+    ACCEPTED: cooking,
+    PREPARING: cooking,
+    READY: () => [button('ส่งมอบ', (e) => pickup(o, refresh, e.currentTarget)),
       o.can_no_show ? button('ลูกค้าไม่มารับ', reasoned('cancel', 'ยกเลิกเพราะลูกค้าไม่มารับ', 'ยกเลิกออเดอร์', ['ลูกค้าไม่มารับภายในเวลา', 'ติดต่อลูกค้าไม่ได้']), '.danger.ghost') : null],
   }[o.status]();
   const readyFor = o.ready_at ? Math.floor((Date.now() - new Date(o.ready_at)) / 60000) : 0;
@@ -126,19 +128,123 @@ function card(o, refresh, readyAlert) {
     h('div.row', {}, buttons));
 }
 
+/**
+ * Hand-over in one step: scan the customer's QR, which also confirms the money (payment_received).
+ * Camera first; a photo, a USB scanner or typing the full order number when there is no camera.
+ */
 async function pickup(o, refresh, button) {
-  const body = await dialog('ยืนยันการรับอาหาร', (close) => {
-    const code = h('input', { maxlength: 4, autocomplete: 'off', inputmode: 'text', autocapitalize: 'characters' });
+  let stopCamera = () => {};
+  let sending = false;
+  let finished = false;
+  let wrong = '';
+  const paid = o.payment_status === 'PAID';
+  const done = await dialog(`ส่งมอบ ${o.queue ? queueNo(o.queue.number) : ''}`, (close) => {
+    const send = async (body, control) => {
+      if (sending) return;
+      sending = true;
+      try {
+        await busy(control, async () => {
+          await post(`/merchant/orders/${o.id}/complete`, { ...body, payment_received: true });
+          finished = true;
+          close(true);
+        });
+      } finally {
+        sending = false;
+      }
+    };
+    const scanned = async (text) => {
+      if (text === wrong) return; // the same wrong code stays in front of the camera
+      await send({ pickup_qr: text.trim() }, null);
+      if (!finished) wrong = text;
+    };
+    const note = h('p.muted', { role: 'status' }, 'กำลังเปิดกล้อง…');
+    const video = h('video.scan', { playsinline: true, muted: true, 'aria-label': 'ภาพจากกล้อง' });
+    video.muted = true;
+    const photo = h('input', { type: 'file', accept: 'image/*', capture: 'environment', onchange: () => busy(photo, async () => {
+      const text = photo.files[0] ? await readPhoto(photo.files[0]) : null;
+      photo.value = '';
+      if (!text) throw new Error('ไม่พบ QR ในรูป ลองถ่ายใหม่ให้ชัดและเต็มกรอบ');
+      wrong = '';
+      await scanned(text);
+    }) });
+    const typed = h('input', { name: 'pickup_qr', maxlength: 32, autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false' });
+    const typedButton = h('button.btn.ghost', { type: 'submit' }, 'ตรวจ');
     const reason = h('input', { maxlength: 300 });
-    return h('form', { onsubmit: (e) => { e.preventDefault(); close(code.value.trim() ? { pickup_code: code.value.trim() } : { override_reason: reason.value.trim() }); } },
-      field('รหัส 4 ตัวท้ายจากหน้าจอลูกค้า', code),
-      h('details', {}, h('summary', {}, 'ลูกค้าแสดงรหัสไม่ได้'), field('เหตุผลและวิธีที่ตรวจสอบ', reason, 'ระบบบันทึกไว้ให้ผู้ดูแลตรวจสอบ')),
-      h('div.row.end', {}, h('button.btn', { type: 'submit' }, 'ส่งมอบแล้ว')));
+    const reasonButton = h('button.btn.ghost', { type: 'submit' }, 'ส่งมอบโดยไม่สแกน');
+    camera(video, scanned).then((stop) => { stopCamera = stop; note.textContent = 'หันกล้องไปที่ QR บนมือถือลูกค้า'; })
+      .catch((e) => { video.hidden = true; note.textContent = e.message; typed.focus(); });
+    return [
+      h('p.notice', {}, paid ? '✓ ชำระแล้ว สแกน QR เพื่อส่งมอบ' : h('span', {}, 'เก็บเงิน ', h('b', {}, baht(o.total)), ' สแกนสำเร็จ = รับเงินและส่งมอบแล้ว')),
+      video, note,
+      field('ไม่มีกล้อง: ถ่ายรูป QR', photo),
+      h('form', { onsubmit: (e) => { e.preventDefault(); if (typed.value.trim()) send({ pickup_qr: typed.value.trim() }, typedButton); } },
+        field('เครื่องสแกน หรือพิมพ์เลขออเดอร์เต็มจากหน้าจอลูกค้า', h('div.row', {}, h('div.grow', {}, typed), typedButton))),
+      h('details', {}, h('summary', {}, 'ลูกค้าแสดง QR ไม่ได้'), h('form', { onsubmit: (e) => { e.preventDefault(); send({ override_reason: reason.value.trim() }, reasonButton); } },
+        field('เหตุผลและวิธีที่ตรวจสอบ', reason, 'ระบบบันทึกไว้ให้ผู้ดูแลตรวจสอบ'), h('div.row.end', {}, reasonButton))),
+    ];
   });
-  if (!body) return;
-  await busy(button, async () => {
-    try { await post(`/merchant/orders/${o.id}/complete`, body); toast('ส่งมอบเรียบร้อย'); } finally { await refresh(); }
-  });
+  stopCamera();
+  if (done) toast('ส่งมอบเรียบร้อย');
+  await busy(button, refresh);
+}
+
+/** One reader for camera frames and photos: BarcodeDetector where the browser has it, jsQR otherwise. */
+let reader = null;
+function qrReader() {
+  reader ??= (async () => {
+    if ('BarcodeDetector' in window && (await BarcodeDetector.getSupportedFormats()).includes('qr_code')) {
+      const detector = new BarcodeDetector({ formats: ['qr_code'] });
+      return async (source) => (await detector.detect(source))[0]?.rawValue || null;
+    }
+    const jsQR = await vendor('jsQR.min.js', 'jsQR');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    return async (source) => {
+      const w = source.videoWidth || source.width;
+      const ht = source.videoHeight || source.height;
+      if (!w || !ht) return null;
+      const scale = Math.min(1, 800 / Math.max(w, ht));
+      canvas.width = Math.round(w * scale);
+      canvas.height = Math.round(ht * scale);
+      ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+      const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      return jsQR(data, width, height)?.data || null;
+    };
+  })().catch((e) => { reader = null; throw e; });
+  return reader;
+}
+
+async function readPhoto(file) {
+  const read = await qrReader();
+  const bitmap = await createImageBitmap(file);
+  try { return await read(bitmap); } finally { bitmap.close(); }
+}
+
+/** Starts the back camera and calls found(text) for each QR seen; resolves with stop(). */
+async function camera(video, found) {
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error('เบราว์เซอร์นี้เปิดกล้องไม่ได้ (กล้องต้องใช้ HTTPS) ใช้รูปถ่ายหรือพิมพ์เลขออเดอร์แทน');
+  const read = await qrReader();
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+  } catch (e) {
+    throw new Error('เปิดกล้องไม่ได้ ตรวจสิทธิ์กล้อง หรือใช้รูปถ่ายหรือพิมพ์เลขออเดอร์แทน');
+  }
+  let stopped = false;
+  const stop = () => { stopped = true; stream.getTracks().forEach((t) => t.stop()); };
+  video.srcObject = stream;
+  await video.play().catch(() => {});
+  const tick = async () => {
+    if (!video.isConnected) stop(); // the dialog closed, perhaps while the camera was starting
+    if (stopped) return;
+    try {
+      const text = video.readyState >= 2 ? await read(video) : null;
+      if (text && !stopped) await found(text);
+    } catch (e) { /* a frame that cannot be read is skipped */ }
+    if (!stopped) setTimeout(tick, 250);
+  };
+  tick();
+  return stop;
 }
 
 async function history(main, page = 1) {

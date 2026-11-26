@@ -311,8 +311,9 @@ async function home(alive) {
     courtBox.replaceChildren(h('span.eyebrow', {}, 'รับอาหารที่'), select);
     crowdCard.replaceChildren(h('div.row.between', {}, h('span.muted', {}, longDate()), chosen ? h('span.muted', {}, `เปิด ${chosen.open_shops} จาก ${chosen.shops} ร้าน`) : null),
       h('h2', {}, 'ความหนาแน่น', chosen ? ` · ${chosen.name}` : ''),
-      chosen ? [crowdMeter(chosen.crowd), h('p', {}, crowdBadge(chosen.crowd) || h('span.muted', {}, 'ยังประเมินไม่ได้'), chosen.location ? h('span.muted', {}, ` ${chosen.location}`) : null)]
-        : h('p.muted', {}, 'เลือกโรงอาหารด้านบนเพื่อดูความหนาแน่นรวม แต่ละร้านแสดงระดับของตัวเองด้านล่าง'));
+      // replaceChildren is the DOM method: it takes nodes, not arrays.
+      ...(chosen ? [crowdMeter(chosen.crowd), h('p', {}, crowdBadge(chosen.crowd) || h('span.muted', {}, 'ยังประเมินไม่ได้'), chosen.location ? h('span.muted', {}, ` ${chosen.location}`) : null)]
+        : [h('p.muted', {}, 'เลือกโรงอาหารด้านบนเพื่อดูความหนาแน่นรวม แต่ละร้านแสดงระดับของตัวเองด้านล่าง')]));
   };
   const draw = async () => {
     const courts = await get('/food-courts');

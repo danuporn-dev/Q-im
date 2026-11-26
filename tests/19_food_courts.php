@@ -82,6 +82,7 @@ try {
     $b->until("document.querySelector('select[name=food_court]')");
     $b->js("{const s=document.querySelector('select[name=food_court]');s.value='$court';s.dispatchEvent(new Event('change'));}");
     T::ok($b->until("document.querySelectorAll('.list a.item').length===2") && $b->sees('ความหนาแน่นปานกลาง'), 'two shops of the court, with a text level');
+    T::ok($b->until("document.querySelector('.crowdcard [role=img]')?.getAttribute('aria-label')==='ความหนาแน่นปานกลาง'") && !str_contains((string) $b->js('document.body.innerText'), '[object'), 'the court card shows its level, and no object turned into text');
     $b->open("$base/customer/#/");
     $b->reload();
     T::ok($b->until("document.querySelector('select[name=food_court]')?.value==='$court' && document.querySelectorAll('.list a.item').length===2"), 'the choice is remembered');

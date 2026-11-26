@@ -9,7 +9,7 @@ use App\Support\Database;
 $a = '/api/v1';
 $s = Fixture::shop('sec', ['capacity' => 50]);
 $m = Fixture::login($base, 'merchant', $s['login']);
-[, $adminLogin] = Fixture::staff('admin', 'sec_' . Fixture::run());
+[, $adminLogin] = Fixture::staff('admin', 'review_' . Fixture::run());
 $admin = Fixture::login($base, 'admin', $adminLogin);
 [$c, $o] = Fixture::order($base, 'sec_a', $s);
 $m->post("$a/merchant/orders/$o/accept");

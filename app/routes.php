@@ -7,6 +7,7 @@ use App\Controllers\CatalogController;
 use App\Controllers\CustomerController;
 use App\Controllers\LineController;
 use App\Controllers\MerchantController;
+use App\Controllers\PaymentWebhookController;
 use App\Support\Database;
 use App\Support\Request;
 use App\Support\Router;
@@ -55,6 +56,11 @@ return static function (Router $r): void {
     $r->add('GET', '/orders', [CustomerController::class, 'orders']);
     $r->add('GET', '/orders/{id}', [CustomerController::class, 'order']);
     $r->add('POST', '/orders/{id}/cancel', [CustomerController::class, 'cancel']);
+    $r->add('POST', '/orders/{id}/online-payment', [CustomerController::class, 'onlinePayment']);
+    $r->add('POST', '/orders/{id}/online-payment/check', [CustomerController::class, 'checkPayment']);
+    $r->add('POST', '/orders/{id}/payment-method', [CustomerController::class, 'paymentMethod']);
+    // Stripe's webhook, at /api/webhooks/stripe: signed by Stripe, so no session and no CSRF token (D42).
+    $r->add('POST', '/webhooks/stripe', [PaymentWebhookController::class, 'stripe']);
 
     // Merchant: shop management
     $r->add('GET', '/merchant/shops/{id}/settings', [MerchantController::class, 'settings']);

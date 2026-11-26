@@ -20,6 +20,7 @@ RewriteEngine On
 RewriteOptions AllowNoSlash
 RewriteRule ^(customer|merchant|admin)$ index.php [L]
 RewriteRule ^api/v1(/|$) api/index.php [L]
+RewriteRule ^api/webhooks/ api/index.php [L]
 
 <IfModule mod_headers.c>
     Header always unset X-Powered-By

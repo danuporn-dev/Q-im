@@ -182,7 +182,7 @@ final class Client
 }
 
 /**
- * Sends requests at the same moment; each entry is [Client, method, path, body, base].
+ * Sends requests at the same moment; each entry is [Client, method, path, body, base, optional headers].
  *
  * @return list<array>
  */
@@ -190,8 +190,9 @@ function parallel(array $requests): array
 {
     $multi = curl_multi_init();
     $handles = [];
-    foreach ($requests as [$client, $method, $path, $body, $base]) {
-        $handles[] = $handle = $client->handle($method, $path, $body, [], $base);
+    foreach ($requests as $request) {
+        [$client, $method, $path, $body, $base] = $request;
+        $handles[] = $handle = $client->handle($method, $path, $body, $request[5] ?? [], $base);
         curl_multi_add_handle($multi, $handle);
     }
     do {

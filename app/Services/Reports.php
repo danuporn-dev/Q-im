@@ -8,7 +8,10 @@ use App\Support\Database;
 use App\Support\HttpError;
 use App\Support\Input;
 
-/** Sales are payments that were confirmed (PAID) in the range; dates are Asia/Bangkok. */
+/**
+ * Sales are payments that were confirmed (PAID) in the range; dates are Asia/Bangkok. A cancelled order with a
+ * PAID payment was paid online and cancelled afterwards (D42): that money is due back, so it is not a sale.
+ */
 final class Reports
 {
     public static function summary(string $from, string $to, ?int $shopId = null): array
@@ -20,7 +23,7 @@ final class Reports
         }
         $range = Clock::utcRange($from, $to);
         $shop = $shopId === null ? '' : ' AND o.shop_id = ' . $shopId;
-        $sales = Database::row("SELECT COALESCE(SUM(p.amount), 0.00) AS sales, COUNT(*) AS paid FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.status = 'PAID' AND p.paid_at >= ? AND p.paid_at < ?$shop", $range);
+        $sales = Database::row("SELECT COALESCE(SUM(p.amount), 0.00) AS sales, COUNT(*) AS paid FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.status = 'PAID' AND NOT EXISTS (SELECT 1 FROM orders x WHERE x.id = p.order_id AND x.status = 'CANCELLED') AND p.paid_at >= ? AND p.paid_at < ?$shop", $range);
         $counts = ['COMPLETED' => 0, 'REJECTED' => 0, 'CANCELLED' => 0, 'PENDING' => 0];
         foreach (Database::rows("SELECT l.to_status, COUNT(*) AS n FROM order_status_logs l JOIN orders o ON o.id = l.order_id WHERE l.created_at >= ? AND l.created_at < ?$shop GROUP BY l.to_status", $range) as $row) {
             $counts[$row['to_status']] = (int) $row['n'];
@@ -32,7 +35,7 @@ final class Reports
             'avg_prep_minutes' => $seconds === null ? null : round((float) $seconds / 60, 1),
             'top_menus' => Database::rows(
                 "SELECT MAX(i.name_snapshot) AS name, SUM(i.quantity) AS quantity FROM order_items i JOIN orders o ON o.id = i.order_id JOIN payments p ON p.order_id = o.id
-                 WHERE p.status = 'PAID' AND p.paid_at >= ? AND p.paid_at < ?$shop GROUP BY i.menu_id ORDER BY quantity DESC, name LIMIT 10",
+                 WHERE p.status = 'PAID' AND NOT EXISTS (SELECT 1 FROM orders x WHERE x.id = p.order_id AND x.status = 'CANCELLED') AND p.paid_at >= ? AND p.paid_at < ?$shop GROUP BY i.menu_id ORDER BY quantity DESC, name LIMIT 10",
                 $range
             ),
         ];
@@ -50,7 +53,7 @@ final class Reports
         foreach (['today' => 0, 'last7' => 6, 'last30' => 29] as $name => $back) {
             $row = Database::row(
                 "SELECT COALESCE(SUM(p.amount), 0.00) AS sales, COUNT(*) AS paid_orders FROM payments p JOIN orders o ON o.id = p.order_id
-                 WHERE p.status = 'PAID' AND p.paid_at >= ? AND p.paid_at < ? AND o.shop_id = ?",
+                 WHERE p.status = 'PAID' AND NOT EXISTS (SELECT 1 FROM orders x WHERE x.id = p.order_id AND x.status = 'CANCELLED') AND p.paid_at >= ? AND p.paid_at < ? AND o.shop_id = ?",
                 [...Clock::utcRange($today->modify("-$back day")->format('Y-m-d'), $today->format('Y-m-d')), $shopId]
             );
             $periods[$name] = ['sales' => $row['sales'], 'paid_orders' => (int) $row['paid_orders']];
@@ -72,12 +75,12 @@ final class Reports
         return [
             'by_shop' => Database::rows(
                 "SELECT s.id, s.name, COUNT(*) AS orders, SUM(p.amount) AS sales FROM payments p JOIN orders o ON o.id = p.order_id JOIN shops s ON s.id = o.shop_id
-                 WHERE p.status = 'PAID' AND p.paid_at >= ? AND p.paid_at < ? GROUP BY s.id, s.name ORDER BY sales DESC LIMIT 50",
+                 WHERE p.status = 'PAID' AND NOT EXISTS (SELECT 1 FROM orders x WHERE x.id = p.order_id AND x.status = 'CANCELLED') AND p.paid_at >= ? AND p.paid_at < ? GROUP BY s.id, s.name ORDER BY sales DESC LIMIT 50",
                 $range
             ),
             'by_day' => Database::rows(
                 "SELECT DATE(p.paid_at + INTERVAL 7 HOUR) AS day, COUNT(*) AS orders, SUM(p.amount) AS sales FROM payments p
-                 WHERE p.status = 'PAID' AND p.paid_at >= ? AND p.paid_at < ? GROUP BY day ORDER BY day",
+                 WHERE p.status = 'PAID' AND NOT EXISTS (SELECT 1 FROM orders x WHERE x.id = p.order_id AND x.status = 'CANCELLED') AND p.paid_at >= ? AND p.paid_at < ? GROUP BY day ORDER BY day",
                 $range
             ),
         ];

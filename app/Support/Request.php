@@ -16,7 +16,9 @@ final class Request
     {
         $path = (string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
         $at = strpos($path, '/api/v1');
-        $path = $at === false ? '/' : substr($path, $at + 7);
+        $hook = strpos($path, '/api/webhooks/');
+        // Webhooks live outside the versioned API (/api/webhooks/...) and are routed as /webhooks/...
+        $path = $at !== false ? substr($path, $at + 7) : ($hook !== false ? substr($path, $hook + 4) : '/');
         return new self($_SERVER['REQUEST_METHOD'] ?? 'GET', '/' . trim($path, '/'));
     }
 

@@ -24,7 +24,7 @@ final class StripeGateway implements Gateway
 
     public static function fromEnv(): self
     {
-        return new self(Env::get('STRIPE_SECRET_KEY'));
+        return new self(trim(Env::get('STRIPE_SECRET_KEY')));
     }
 
     /**

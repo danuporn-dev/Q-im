@@ -98,11 +98,17 @@ final class OrderFlow
             if ($to === 'READY') {
                 PickupTokens::issue($orderId, Clock::now());
             }
+            if ($to === 'CANCELLED') {
+                OnlinePayments::cancelledByShop($orderId, $userId, (string) $reason);
+            }
             if ($event !== null) {
                 Notifications::enqueue($orderId, (int) $order['user_id'], $event);
             }
             self::fillKitchen((int) $order['shop_id']);
         });
+        if ($to === 'CANCELLED') {
+            OnlinePayments::cancelOpen($orderId);
+        }
     }
 
     /**
@@ -209,6 +215,8 @@ final class OrderFlow
         if ($wrong !== null) {
             throw $wrong;
         }
+        // Paid another way: the online QR must stop working.
+        OnlinePayments::cancelOpen($orderId);
     }
 
     private static function scanLocked(): HttpError
@@ -226,7 +234,8 @@ final class OrderFlow
     /** How the shop says the money arrived; the customer's choice when the shop does not say. */
     private static function receivedMethod(array $in, array $payment, int $shopId): string
     {
-        $method = $in['method'] ?? $payment['requested_method'];
+        // A customer who chose online PromptPay but pays the shop in person pays cash; only Stripe sets STRIPE_PROMPTPAY.
+        $method = $in['method'] ?? ($payment['requested_method'] === OnlinePayments::METHOD ? 'PAY_AT_STORE' : $payment['requested_method']);
         $offered = $method === 'PROMPTPAY' && ($payment['requested_method'] === 'PROMPTPAY' || PromptPay::numberOf($shopId) !== null);
         if ($method !== 'PAY_AT_STORE' && !$offered) {
             throw HttpError::invalid('วิธีรับเงินไม่ถูกต้อง', ['field' => 'method']);

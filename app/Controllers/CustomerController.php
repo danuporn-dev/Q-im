@@ -7,6 +7,7 @@ use App\Services\Auth;
 use App\Services\Cart;
 use App\Services\Favorites;
 use App\Services\Inbox;
+use App\Services\OnlinePayments;
 use App\Services\Reviews;
 use App\Services\OrderFlow;
 use App\Services\Orders;
@@ -37,11 +38,41 @@ final class CustomerController
             throw HttpError::invalid('ข้อมูลยืนยันออเดอร์ไม่ครบ');
         }
         $method = $in['payment_method'] ?? 'PAY_AT_STORE';
-        if (!in_array($method, Orders::PAYMENT_METHODS, true)) {
+        if (!in_array($method, Orders::paymentMethods(), true)) {
             throw HttpError::invalid('วิธีชำระไม่ถูกต้อง', ['field' => 'payment_method']);
         }
         [$id, $created] = Orders::create($user['id'], $key, $quote, $method);
         return [Orders::customerOrder($user['id'], $id), $created ? 201 : 200];
+    }
+
+    /** Shows the PromptPay QR of an order paid online (D42), creating the PaymentIntent the first time. */
+    public static function onlinePayment(Request $q, int $id): array
+    {
+        $user = Auth::user($q, 'customer');
+        RateLimiter::hit('online-payment', (string) $user['id'], 20, 600);
+        OnlinePayments::start($user['id'], $id);
+        return [Orders::customerOrder($user['id'], $id), 200];
+    }
+
+    /** Asks Stripe for the payment state now, instead of waiting for the webhook. */
+    public static function checkPayment(Request $q, int $id): array
+    {
+        $user = Auth::user($q, 'customer');
+        RateLimiter::hit('payment-check', (string) $user['id'], 12, 60);
+        OnlinePayments::check($user['id'], $id);
+        return [Orders::customerOrder($user['id'], $id), 200];
+    }
+
+    /** From online payment back to paying at the shop; the only change of method a customer can make. */
+    public static function paymentMethod(Request $q, int $id): array
+    {
+        $user = Auth::user($q, 'customer');
+        RateLimiter::hit('payment-method', (string) $user['id'], 10, 600);
+        if (($q->json()['payment_method'] ?? null) !== 'PAY_AT_STORE') {
+            throw HttpError::invalid('เปลี่ยนได้เฉพาะเป็นจ่ายที่ร้าน', ['field' => 'payment_method']);
+        }
+        OnlinePayments::switchToStore($user['id'], $id);
+        return [Orders::customerOrder($user['id'], $id), 200];
     }
 
     public static function orders(Request $q): array

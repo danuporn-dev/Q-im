@@ -25,6 +25,8 @@ final class AuthController
             'demo_customers' => Env::isDevelopment() ? DevMockIdentity::CUSTOMERS : null,
             'demo_code_required' => Env::isDevelopment() && trim(Env::get('DEMO_ACCESS_CODE')) !== '',
             'poll_seconds' => self::pollSeconds(),
+            // manual: the shop confirms every payment (D38); gateway: online PromptPay through Stripe as well (D42).
+            'payment_mode' => \App\Payments\Payments::mode(),
         ], 200];
     }
 

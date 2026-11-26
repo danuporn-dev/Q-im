@@ -19,6 +19,12 @@ final class Orders
         'created_at', 'accepted_at', 'preparing_at', 'ready_at', 'completed_at',
     ];
     public const PAYMENT_METHODS = ['PAY_AT_STORE', 'PROMPTPAY'];
+
+    /** What a customer may choose: the shop's own PromptPay number (D38), or online PromptPay instead (D42). */
+    public static function paymentMethods(): array
+    {
+        return \App\Payments\Payments::online() ? ['PAY_AT_STORE', OnlinePayments::METHOD] : self::PAYMENT_METHODS;
+    }
     public const ACTIVE = "('PENDING','ACCEPTED','PREPARING','READY')";
 
     /** @return array{0: int, 1: bool} order id and whether it was created now */
@@ -84,6 +90,9 @@ final class Orders
         if (Money::toSatang($priced['total']) > self::MAX_TOTAL) {
             throw HttpError::invalid('ยอดรวมสูงเกินกว่าที่ระบบรองรับ');
         }
+        if ($method === OnlinePayments::METHOD && Money::toSatang($priced['total']) < Money::toSatang(OnlinePayments::MIN_TOTAL)) {
+            throw HttpError::conflict('ONLINE_MINIMUM', 'จ่ายออนไลน์ได้ตั้งแต่ ' . OnlinePayments::MIN_TOTAL . ' บาท กรุณาเลือกชำระที่ร้าน');
+        }
         if (!hash_equals($priced['quote'], $quote)) {
             throw HttpError::conflict('PRICE_CHANGED', 'ราคาหรือรายการเปลี่ยนไป กรุณาตรวจสอบแล้วยืนยันใหม่', ['total' => $priced['total']]);
         }
@@ -142,6 +151,10 @@ final class Orders
         $order['pickup'] = $order['status'] === 'READY' ? PickupTokens::forCustomer($orderId, rtrim(str_replace('T', ' ', $order['ready_at']), 'Z')) : null;
         $order['promptpay'] = $order['status'] === 'READY' && $order['payment_status'] === 'UNPAID' && $order['payment_method'] === 'PROMPTPAY'
             ? PromptPay::forOrder($order['shop']['id'], $order['total']) : null;
+        $online = OnlinePayments::forCustomer($orderId, $order['status'], $order['payment_status'], $order['payment_method']);
+        if ($online !== null) {
+            $order['online_payment'] = $online;
+        }
         $order['timeline'] = array_map(
             static fn (array $l): array => ['status' => $l['to_status'], 'reason' => self::publicReason($l['to_status'], $l['reason']), 'at' => Clock::iso($l['created_at'])],
             Database::rows('SELECT to_status, reason, created_at FROM order_status_logs WHERE order_id = ? ORDER BY id', [$orderId])

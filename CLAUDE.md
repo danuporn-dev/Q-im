@@ -42,10 +42,19 @@
 - Merchant dashboard, menu management, เปิด/ปิดรับออเดอร์, Admin dashboard, การควบคุมสิทธิ์
 - Pickup ด้วย QR บนหน้าจอลูกค้า (เลขออเดอร์เต็ม ร้านเห็นแบบปิดบางส่วน) ให้ร้านสแกน; สแกนไม่ได้ส่งมอบด้วยเหตุผลที่ถูก audit (D27, D31); QR token แบบใช้ครั้งเดียว/หมดอายุเป็นขั้นเสริม
 
-### Extensions (ทำเมื่อผู้ใช้สั่งหรือ MVP ผ่านแล้ว)
-- PromptPay QR ที่ตรวจสอบการชำระเงินจริงได้, โปรโมชัน, รายการโปรด, รีวิว
-- หลายสาขา, สั่งตามช่วงเวลา, จอแสดงคิว, รายงานขั้นสูง, smart recommendation
-- ไม่มี delivery, rider, ค่าจัดส่ง หรือ GPS tracking ในขอบเขตปัจจุบัน
+### อยู่ในขอบเขตแล้ว (อนุมัติย้ายจาก Extensions, D33–D38)
+- Crowd Level ต่อร้าน/โรงอาหาร, เลือกโรงอาหาร, หน้านโยบายความเป็นส่วนตัว/คำถาม/เกี่ยวกับ (ฉบับร่าง)
+- รายการโปรด (ร้าน/เมนู), รีวิวแบบไม่ระบุตัวตน 1 ครั้งต่อออเดอร์ COMPLETED, admin ซ่อนได้พร้อม audit
+- แจ้งเตือนในเว็บสำหรับลูกค้า, กระดิ่งและเสียงเตือนออเดอร์ใหม่ของร้าน, สถิติร้าน
+- PromptPay แบบร้านยืนยันเอง (ระบบไม่ตรวจยอด ไม่ถือ QR หรือสลิปเป็นหลักฐาน), QR รับอาหารแบบ token ใช้ครั้งเดียวและหมดอายุ
+- จอแสดงคิวทีวี: อยู่ในขอบเขต แต่เลื่อนไปทำทีหลัง (D33)
+
+### Extensions (ทำเมื่อผู้ใช้สั่ง)
+- PromptPay ที่ตรวจยอดอัตโนมัติผ่าน payment gateway/webhook, โปรโมชัน
+- หลายสาขา, สั่งตามช่วงเวลา, รายงานขั้นสูง, smart recommendation
+
+### นอกขอบเขต
+- delivery, rider, ค่าจัดส่ง, ที่อยู่ และ GPS tracking; wallet/ถอนเงิน; บัตรเครดิต; หาที่นั่ง; แชท; refund
 
 ## 4. Actors & Access Control
 
@@ -125,7 +134,8 @@ READY -> CANCELLED (merchant no-show only: UNPAID, minimum wait passed, reason r
 - ห้ามย้อนสถานะโดยไม่มี workflow ที่อนุมัติ; ทุก transition ตรวจสิทธิ์และ current state ที่ backend พร้อมบันทึก actor, timestamp, reason
 - ACCEPTED = รับแล้ว/ออกคิว (ตั้งแต่ D31 ผ่านไป PREPARING ทันทีใน transaction เดียว ยัง log ไว้); PREPARING = รับแล้ว อยู่ในครัวหรือรอช่องทำอาหาร (ช่อง = capacity, ได้ช่องตาม FIFO และบันทึกเวลาใน `cooking_started_at` ตาม D32); READY = พร้อมรับ; COMPLETED = รับแล้ว
 - Queue status เป็นผลจาก order status; ไม่ให้สองแหล่งข้อมูลเปลี่ยนแยกกันจนขัดแย้ง
-- Payment status แยกจาก order: UNPAID / PAID / REFUNDED (เมื่อรองรับ refund) และ payment method PAY_AT_STORE; ออเดอร์ COMPLETED ต้อง PAID สำหรับ MVP
+- Payment status แยกจาก order: UNPAID / PAID / REFUNDED (ยังไม่ใช้ เพราะ refund อยู่นอกขอบเขต); วิธีที่ลูกค้าเลือกตอนสั่ง (`requested_method`) และวิธีที่ร้านยืนยันว่าได้รับ (`method`): PAY_AT_STORE หรือ PROMPTPAY; ยืนยันชำระได้เฉพาะ READY และร้านต้องกดยืนยันเองเสมอ ครั้งเดียวต่อออเดอร์; ออเดอร์ COMPLETED ต้อง PAID
+- QR รับอาหารคือ token สุ่มใช้ครั้งเดียว สร้างเมื่อ READY แสดงเฉพาะตอน READY หมดอายุ `PICKUP_TOKEN_HOURS` (ค่าเริ่มต้น 12) หลังพร้อม ใช้แล้วเมื่อ COMPLETED ทางสำรองคือเลขออเดอร์เต็มหรือเหตุผลที่ audit; ผิดครบ 5 ครั้งต่อออเดอร์ล็อกการสแกน
 - ร้านที่ปิดรับออเดอร์หรือเมนูหมดต้องไม่รับ checkout ใหม่ แต่ยังจัดการออเดอร์เดิมได้
 - ไม่ลบออเดอร์/เมนูที่เกี่ยวข้องกับประวัติแบบ hard delete; ใช้ active flag และ snapshot ชื่อ/ราคาใน order items
 - เวลาอ้างอิง Asia/Bangkok; เก็บ timestamps อย่างสม่ำเสมอ (แนะนำ UTC และแปลงตอนแสดง/กำหนด business date)
@@ -155,10 +165,10 @@ Mobile-first, modern food ordering, Thai-first, สีหลักเขีย�
 | Cart | รายการ, จำนวน, ตัวเลือก, ยอดรวม, ลบ/แก้ไข |
 | Checkout | สรุปออเดอร์, self pickup, ชำระที่ร้าน, confirm |
 | Order success / tracking | เลขออเดอร์, queue number หลังยืนยัน, status timeline, ETA, cancel ตามสิทธิ์ |
-| Pickup | QR รับอาหาร + เลขออเดอร์ |
+| Pickup | QR รับอาหาร (token ใช้ครั้งเดียว เฉพาะตอน READY) + เลขออเดอร์; QR PromptPay พร้อม "รอร้านตรวจสอบยอด" ถ้าเลือก PromptPay |
 | Order history | active / completed / cancelled orders, details |
-| Profile | ข้อมูลที่อนุญาตจาก LINE, privacy |
-| Favorites / reviews | Extension |
+| Profile | ข้อมูลที่อนุญาตจาก LINE, รายการโปรด, การแจ้งเตือน, นโยบายความเป็นส่วนตัว/คำถาม/เกี่ยวกับ |
+| Favorites / reviews / notifications | รายการโปรดของฉัน, รีวิวร้าน (ไม่ระบุชื่อ), ให้คะแนนหลังรับอาหาร, รายการแจ้งเตือนและจำนวนยังไม่อ่าน |
 
 Bottom navigation: หน้าหลัก / ค้นหา / ออเดอร์ / โปรไฟล์; cart badge และ sticky checkout CTA เมื่อเหมาะสม
 
@@ -206,7 +216,7 @@ flowchart LR
 | shops | id, food_court_id FK, name, description, image_url, accepting_orders, capacity, active |
 | shop_members | shop_id, user_id, permissions; unique pair |
 | shop_hours | shop_id, day_of_week, open_time, close_time |
-| shop_settings | shop_id, avg_prep_minutes, max_active_orders, settings |
+| shop_settings | shop_id, avg_prep_minutes, max_active_orders, promptpay_phone (เบอร์มือถือเท่านั้น), promptpay_enabled |
 | categories | id, shop_id, name, sort_order |
 | menus | id, shop_id, category_id, name, description, image_url, price, prep_minutes, available, active |
 | menu_option_groups | id, menu_id, name, min_select, max_select |
@@ -220,11 +230,15 @@ flowchart LR
 | queues | id, order_id UNIQUE, shop_id, business_date, queue_number, assigned_at; unique(shop_id,business_date,queue_number) |
 | queue_counters | shop_id, business_date, last_number; composite PK |
 | order_status_logs | id, order_id, from_status, to_status, actor_user_id, reason, created_at |
-| payments | id, order_id, method, status, amount, paid_at, confirmed_by |
+| payments | id, order_id, method (ที่ร้านรับจริง), requested_method (ที่ลูกค้าเลือก), status, amount, paid_at, confirmed_by |
 | notifications | id, order_id, user_id, event_type, dedupe_key UNIQUE, status, attempts, next_attempt_at, sent_at, last_error |
 | audit_logs | id, actor_user_id, action, entity_type, entity_id, safe_metadata, created_at |
-| pickup_tokens (optional) | order_id, token_hash, expires_at, used_at |
-| favorites / reviews / promotions (optional) | เพิ่มตามขอบเขตที่อนุมัติ |
+| pickup_tokens | order_id PK, nonce, token_hash UNIQUE, expires_at, used_at (ตัว token คือ HMAC ด้วยคีย์นอกฐานข้อมูล) |
+| favorite_shops / favorite_menus | (user_id, shop_id/menu_id) PK |
+| reviews | id, order_id UNIQUE, shop_id, user_id, rating 1–5, comment ≤ 500, hidden_at, hidden_by |
+| notification_reads | notification_id PK, read_at (แยกจาก outbox) |
+| orders (เพิ่ม) | cooking_started_at, pickup_failures |
+| promotions (optional) | Extension |
 
 Relationships: food_court 1:N shops; shops 1:N menus/orders; users 1:N orders; order 1:N items; item 1:N options; order 0:1 queue; order 1:N status logs/notifications; shop N:M merchant users. Payment model ต้องไม่อนุญาตยอดชำระซ้ำสำหรับ pay-at-store
 
@@ -261,6 +275,14 @@ Prefix `/api/v1`; JSON response `{ "data": ... }` หรือ `{ "error": { "co
 | GET/PATCH | /admin/users | admin user/role management (item ID route for update) |
 | GET | /admin/reports | aggregate reports |
 | POST | /line/webhook | verified LINE events if needed |
+| GET | /food-courts | courts with crowd level (`GET /shops?food_court_id=`) |
+| GET | /shops/{id}/reviews | anonymous reviews, average |
+| GET/PUT/DELETE | /favorites, /favorites/{shops\|menus}/{id} | own favourites |
+| POST | /orders/{id}/review | review of an own COMPLETED order |
+| GET/POST | /notifications, /notifications/count, /notifications/{id}/read, /notifications/read-all | own website notifications |
+| GET | /merchant/shops/{id}/notifications, /merchant/shops/{id}/reviews | shop bell; reviews read only |
+| GET/PATCH | /admin/reviews, /admin/reviews/{id} | list; hide/unhide with a reason |
+| POST | /merchant/orders/{id}/complete | body: pickup_qr (token or full order number) or override_reason; payment_received + method when unpaid |
 
 Endpoints are design targets, not proof of existing implementation. Keep API naming consistent with repository if existing routes are already established.
 
@@ -371,7 +393,12 @@ q-im/
 | T19 | Business date rollover with old active orders | New counter separate; old order still manageable |
 | T20 | Mobile/tablet/desktop, slow network | Responsive UI, clear loading/error/retry states |
 | T21 | SQL injection/XSS/CSRF attempts | Safely rejected or escaped |
-| T22 | QR pickup replay (if implemented) | Used/expired token rejected |
+| T22 | QR pickup replay | Used/expired/foreign/cancelled token rejected; parallel scans complete once |
+| T23 | Food courts and crowd level | Only visible courts; level from PREPARING vs limit; text, not colour alone |
+| T24 | Favourites and reviews | Own only; one review per own COMPLETED order; anonymous; shop read only; admin hide audited |
+| T25 | Website notifications and shop bell | Own only; independent of LINE; outbox untouched; bell per shop |
+| T26 | Shop statistics | Figures match their definitions (D37); shop only |
+| T27 | PromptPay confirmed by the shop | Mobile number only; QR only when READY with server amount; payment recorded once |
 
 ## 16. LINE Setup Checklist (not yet verified/configured)
 

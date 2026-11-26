@@ -22,7 +22,7 @@ final class TestDb
         // This process and every child process now see only the test database.
         putenv('DB_NAME=' . self::NAME);
         // Nor the presentation settings of .env. Windows drops empty variables, so each gets a value that means "off".
-        foreach (['DEMO_ACCESS_CODE' => ' ', 'DEMO_PUBLIC' => 'false', 'TRUSTED_PROXY' => 'none', 'POLL_SECONDS' => '0'] as $key => $off) {
+        foreach (['DEMO_ACCESS_CODE' => ' ', 'DEMO_PUBLIC' => 'false', 'TRUSTED_PROXY' => 'none', 'POLL_SECONDS' => '0', 'PICKUP_TOKEN_HOURS' => '12', 'PICKUP_TOKEN_KEY' => ' '] as $key => $off) {
             putenv("$key=$off");
         }
         require_once dirname(__DIR__) . '/app/bootstrap.php';

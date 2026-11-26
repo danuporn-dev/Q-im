@@ -1,4 +1,4 @@
-import { $, STATUS, api, badge, baht, busy, confirmBox, dateTime, dialog, empty, failed, field, get, h, loading, loginForm, patch, post, queueNo, setCsrf, toast, today } from './core.js';
+import { $, METHOD, STATUS, api, badge, baht, busy, confirmBox, dateTime, dialog, empty, failed, field, get, h, loading, loginForm, patch, post, queueNo, setCsrf, toast, today } from './core.js';
 
 const app = $('#app');
 let me = null;
@@ -75,7 +75,7 @@ const orders = (main) => {
 async function orderDetail(id) {
   const o = await get(`/admin/orders/${id}`);
   await dialog(o.order_no, () => [
-    h('p', {}, badge(o.status), ' ', o.payment_status === 'PAID' ? 'ชำระแล้ว' : 'ยังไม่ชำระ', ' · ', o.shop.name),
+    h('p', {}, badge(o.status), ' ', o.payment_status === 'PAID' ? 'ชำระแล้ว' : 'ยังไม่ชำระ', ` (${METHOD[o.payment_method]}) · `, o.shop.name),
     h('ul', {}, o.items.map((i) => h('li', {}, `${i.quantity} × ${i.name} ${i.options.map((x) => x.name).join(', ')}`, i.note ? ` (${i.note})` : '', ' ', baht(i.line_total)))),
     h('h3', {}, 'ประวัติสถานะ'), h('ul', {}, o.logs.map((l) => h('li', {}, `${dateTime(l.created_at)} ${STATUS[l.to_status][0]} โดย ${l.actor || 'ระบบ'}`, l.reason ? ` — ${l.reason}` : ''))),
     h('h3', {}, 'การแจ้งเตือน'), o.notifications.length ? h('ul', {}, o.notifications.map((n) => h('li', {}, `${n.event_type}: ${n.status} (${n.attempts} ครั้ง) ${n.last_error || ''}`))) : h('p.muted', {}, 'ไม่มี'),

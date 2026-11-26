@@ -13,12 +13,13 @@ final class ShopAdmin
     public static function settings(int $shopId): array
     {
         $shop = Database::row(
-            'SELECT s.id, s.name, s.description, s.image_url, s.accepting_orders, s.capacity, s.active, t.avg_prep_minutes, t.max_active_orders
+            'SELECT s.id, s.name, s.description, s.image_url, s.accepting_orders, s.capacity, s.active, t.avg_prep_minutes, t.max_active_orders, t.promptpay_phone, t.promptpay_enabled
              FROM shops s LEFT JOIN shop_settings t ON t.shop_id = s.id WHERE s.id = ?',
             [$shopId]
         ) ?? throw HttpError::notFound('ไม่พบร้าน');
         $shop['accepting_orders'] = (bool) $shop['accepting_orders'];
         $shop['active'] = (bool) $shop['active'];
+        $shop['promptpay_enabled'] = (bool) $shop['promptpay_enabled'];
         $hours = Catalog::hours([$shopId])[$shopId] ?? [];
         return $shop + ['ready_alert_minutes' => OrderFlow::readyWaitMinutes(), 'hours' => $hours, 'is_open' => $shop['active'] && $shop['accepting_orders'] && Catalog::withinHours($hours)];
     }
@@ -48,6 +49,12 @@ final class ShopAdmin
         if (array_key_exists('max_active_orders', $in)) {
             $settings['max_active_orders'] = Input::optionalInt($in, 'max_active_orders', 'จำนวนออเดอร์สูงสุด', 1, 1000);
         }
+        if (array_key_exists('promptpay_phone', $in)) {
+            $settings['promptpay_phone'] = in_array($in['promptpay_phone'], [null, ''], true) ? null : PromptPay::phone($in['promptpay_phone']);
+        }
+        if (array_key_exists('promptpay_enabled', $in)) {
+            $settings['promptpay_enabled'] = Input::bool($in, 'promptpay_enabled', 'การเปิด PromptPay');
+        }
         $hours = array_key_exists('hours', $in) ? self::validHours($in) : null;
         Database::tx(static function () use ($userId, $shopId, $shop, $settings, $hours): void {
             Database::row('SELECT id FROM shops WHERE id = ? FOR UPDATE', [$shopId]);
@@ -57,6 +64,9 @@ final class ShopAdmin
                 foreach ($settings as $column => $value) {
                     Database::run("UPDATE shop_settings SET `$column` = ? WHERE shop_id = ?", [$value, $shopId]);
                 }
+            }
+            if (Database::value('SELECT 1 FROM shop_settings WHERE shop_id = ? AND promptpay_enabled = 1 AND promptpay_phone IS NULL', [$shopId])) {
+                throw HttpError::invalid('ต้องใส่หมายเลขมือถือก่อนเปิด PromptPay', ['field' => 'promptpay_phone']);
             }
             if ($hours !== null) {
                 Database::run('DELETE FROM shop_hours WHERE shop_id = ?', [$shopId]);

@@ -36,7 +36,11 @@ final class CustomerController
         if (!is_string($key) || !preg_match('/^[A-Za-z0-9-]{16,64}$/D', $key) || !is_string($quote) || $quote === '') {
             throw HttpError::invalid('ข้อมูลยืนยันออเดอร์ไม่ครบ');
         }
-        [$id, $created] = Orders::create($user['id'], $key, $quote);
+        $method = $in['payment_method'] ?? 'PAY_AT_STORE';
+        if (!in_array($method, Orders::PAYMENT_METHODS, true)) {
+            throw HttpError::invalid('วิธีชำระไม่ถูกต้อง', ['field' => 'payment_method']);
+        }
+        [$id, $created] = Orders::create($user['id'], $key, $quote, $method);
         return [Orders::customerOrder($user['id'], $id), $created ? 201 : 200];
     }
 

@@ -47,7 +47,7 @@ final class MerchantController
     public static function payment(Request $q, int $orderId): array
     {
         $user = Auth::user($q, 'merchant');
-        OrderFlow::confirmPayment($user['id'], $orderId);
+        OrderFlow::confirmPayment($user['id'], $orderId, $q->json());
         return [Orders::shopOrder($orderId), 200];
     }
 

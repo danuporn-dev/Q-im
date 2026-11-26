@@ -1,4 +1,4 @@
-import { $, api, askReason, badge, baht, busy, changes, dateTime, dialog, empty, failed, field, get, h, loading, loginForm, patch, picture, poll, post, queueNo, setCsrf, setPoll, time, toast, today, vendor } from './core.js';
+import { $, METHOD, api, askReason, badge, baht, busy, changes, dateTime, dialog, empty, failed, field, get, h, loading, loginForm, patch, picture, poll, post, queueNo, setCsrf, setPoll, time, toast, today, vendor } from './core.js';
 
 const app = $('#app');
 let me = null;
@@ -68,7 +68,7 @@ async function orders(main) {
     // Three taps (D31): รับออเดอร์ puts the order straight into กำลังทำ; ACCEPTED only remains on older orders.
     board.replaceChildren(...[[['PENDING'], 'ใหม่'], [['ACCEPTED', 'PREPARING'], 'กำลังทำ'], [['READY'], 'พร้อมรับ']].map(([states, label]) => {
       const items = list.filter((o) => states.includes(o.status));
-      return h('section.col', { 'aria-label': label }, h('h2', {}, label, h('span', {}, items.length)), items.length ? h('div.list', {}, items.map((o) => card(o, draw, shop.ready_alert_minutes))) : h('p.muted', {}, 'ไม่มีออเดอร์'));
+      return h('section.col', { 'aria-label': label }, h('h2', {}, label, h('span', {}, items.length)), items.length ? h('div.list', {}, items.map((o) => card(o, draw, shop))) : h('p.muted', {}, 'ไม่มีออเดอร์'));
     }));
   };
   await draw();
@@ -136,7 +136,9 @@ function watchBell() {
 
 const lines = (o) => h('ul', {}, o.items.map((i) => h('li', {}, `${i.quantity} × ${i.name}`, i.options.length ? h('div.muted', {}, i.options.map((x) => x.name).join(', ')) : null, i.note ? h('div', {}, 'หมายเหตุ: ', i.note) : null)));
 
-function card(o, refresh, readyAlert) {
+function card(o, refresh, shop) {
+  const readyAlert = shop.ready_alert_minutes;
+  const byTransfer = o.payment_method === 'PROMPTPAY';
   const act = (action, body) => async (e) => {
     const button = e?.currentTarget;
     await busy(button, async () => {
@@ -159,8 +161,8 @@ function card(o, refresh, readyAlert) {
     PENDING: () => [button('รับออเดอร์', act('accept')), button('ปฏิเสธ', reasoned('reject', 'ปฏิเสธออเดอร์', 'ปฏิเสธ', ['วัตถุดิบหมด', 'ร้านกำลังจะปิด', 'ออเดอร์เต็ม']), '.danger.ghost')],
     ACCEPTED: cooking,
     PREPARING: cooking,
-    READY: () => [button('ส่งมอบ', (e) => pickup(o, refresh, e.currentTarget)),
-      o.can_no_show ? button('ลูกค้าไม่มารับ', reasoned('cancel', 'ยกเลิกเพราะลูกค้าไม่มารับ', 'ยกเลิกออเดอร์', ['ลูกค้าไม่มารับภายในเวลา', 'ติดต่อลูกค้าไม่ได้']), '.danger.ghost') : null],
+    READY: () => [button('ส่งมอบ', (e) => pickup(o, refresh, e.currentTarget, shop.promptpay_enabled || byTransfer)),
+      o.can_no_show ? button('ลูกค้าไม่มารับ', reasoned('cancel', byTransfer ? 'ลูกค้าเลือก PromptPay: ตรวจว่าไม่มีเงินเข้าก่อนยกเลิก' : 'ยกเลิกเพราะลูกค้าไม่มารับ', 'ยกเลิกออเดอร์', ['ลูกค้าไม่มารับภายในเวลา', 'ติดต่อลูกค้าไม่ได้']), '.danger.ghost') : null],
   }[o.status]();
   const readyFor = o.ready_at ? Math.floor((Date.now() - new Date(o.ready_at)) / 60000) : 0;
   const late = (o.status === 'PENDING' && waited >= 5) || (o.status === 'READY' && readyFor >= readyAlert);
@@ -170,16 +172,16 @@ function card(o, refresh, readyAlert) {
     late ? h('p.notice', {}, o.status === 'PENDING' ? `รอยืนยันมา ${waited} นาที` : `พร้อมรับมา ${readyFor} นาที กรุณาตรวจสอบ`) : null,
     lines(o),
     h('div.row.between', {}, h('span.muted', {}, o.order_no), h('b.price', {}, baht(o.total))),
-    o.status === 'READY' ? h('p', {}, o.payment_status === 'PAID' ? '✓ ชำระแล้ว' : 'ยังไม่ชำระ') : null,
+    o.status === 'READY' ? h('p', {}, o.payment_status === 'PAID' ? `✓ ชำระแล้ว · ${METHOD[o.payment_method]}` : byTransfer ? 'ยังไม่ชำระ · ลูกค้าเลือก PromptPay' : 'ยังไม่ชำระ') : (byTransfer ? h('p.muted', {}, 'ลูกค้าเลือก PromptPay') : null),
     h('div.row', {}, buttons));
 }
 
 /**
- * Hand-over: scan the customer's QR (or type the full order number), then, if the order is not paid yet,
+ * Hand-over: scan the customer's single-use QR (or type the full order number), then, if the order is not paid yet,
  * the shop confirms the money with its own tap. Nothing marks an order paid without that tap (D32).
  * Camera first; a photo, a USB scanner or typing when there is no camera.
  */
-async function pickup(o, refresh, button) {
+async function pickup(o, refresh, button, askMethod) {
   let stopCamera = () => {};
   let sending = false;
   let verified = null; // a body that passed the QR or reason check and now waits for the money
@@ -212,16 +214,20 @@ async function pickup(o, refresh, button) {
       verified = body;
       stopCamera();
       scanArea.hidden = true;
-      const confirm = h('button.btn.block', { type: 'button', onclick: (e) => send({ ...verified, payment_received: true }, e.currentTarget) }, `ได้รับเงินแล้ว ${baht(o.total)}`);
+      let method = o.payment_method;
+      const choice = askMethod ? h('fieldset', {}, h('legend', {}, 'รับเงินทางไหน'), Object.entries({ PAY_AT_STORE: 'เงินสดที่ร้าน', PROMPTPAY: 'PromptPay (เห็นยอดเข้าบัญชีแล้ว)' }).map(([value, label]) => h('label.check', {}, h('input', { type: 'radio', name: 'method', value, checked: method === value, onchange: () => { method = value; } }), label))) : '';
+      const confirm = h('button.btn.block', { type: 'button', onclick: (e) => send({ ...verified, payment_received: true, ...(askMethod ? { method } : {}) }, e.currentTarget) }, `ได้รับเงินแล้ว ${baht(o.total)}`);
       payArea.replaceChildren(
         h('p.notice', {}, body.pickup_qr ? '✓ QR ถูกต้อง' : 'ส่งมอบโดยไม่สแกน QR (บันทึกเหตุผลแล้วเมื่อยืนยัน)'),
         h('p', {}, 'เก็บเงินจากลูกค้า ', h('b.price', {}, baht(o.total)), ' แล้วกดยืนยัน'),
+        byTransferNote(), choice,
         confirm,
         h('p.muted', {}, 'ยังไม่ได้รับเงิน: ปิดหน้าต่างนี้ ออเดอร์ยังพร้อมรับเหมือนเดิม'),
       );
       payArea.hidden = false;
       confirm.focus();
     };
+    const byTransferNote = () => (o.payment_method === 'PROMPTPAY' ? h('p.notice', {}, 'ลูกค้าเลือก PromptPay: เปิดแอปธนาคารของร้านตรวจว่ายอดเข้าจริง ภาพหน้าจอหรือสลิปของลูกค้าไม่ใช่หลักฐาน') : '');
     const lockScan = (message) => {
       stopCamera();
       scanArea.replaceChildren(h('p.notice.bad', { role: 'alert' }, message));
@@ -229,6 +235,7 @@ async function pickup(o, refresh, button) {
     };
     const scanned = async (text) => {
       if (verified || text === wrong) return; // the same wrong code stays in front of the camera
+      if (text.startsWith('000201')) { wrong = text; toast('นั่นคือ QR PromptPay ให้สแกน QR รับอาหาร', 'bad'); return; }
       await send({ pickup_qr: text.trim() }, null);
       if (!verified) wrong = text;
     };
@@ -242,7 +249,7 @@ async function pickup(o, refresh, button) {
       wrong = '';
       await scanned(text);
     }) });
-    const typed = h('input', { name: 'pickup_qr', maxlength: 32, autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false' });
+    const typed = h('input', { name: 'pickup_qr', maxlength: 80, autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false' });
     const typedButton = h('button.btn.ghost', { type: 'submit' }, 'ตรวจ');
     const reason = h('input', { maxlength: 300 });
     const reasonButton = h('button.btn.ghost', { type: 'submit' }, 'ส่งมอบโดยไม่สแกน');
@@ -433,6 +440,8 @@ async function settings(main) {
   const avg = number(s.avg_prep_minutes, 240);
   const max = number(s.max_active_orders, 1000);
   const image = imageField(s.image_url, s.name);
+  const promptPhone = h('input', { name: 'promptpay_phone', inputmode: 'tel', maxlength: 20, value: s.promptpay_phone || '', placeholder: '08XXXXXXXX' });
+  const promptOn = h('input', { type: 'checkbox', name: 'promptpay_enabled', checked: s.promptpay_enabled });
   const hours = s.hours.map((x) => ({ ...x }));
   const box = h('div');
   const drawHours = () => box.replaceChildren(...hours.map((x, i) => h('div.row', { style: 'margin-bottom:.5rem' },
@@ -444,9 +453,10 @@ async function settings(main) {
   const button = h('button.btn', { type: 'submit' }, 'บันทึก');
   const num = (el) => (el.value === '' ? null : Number(el.value));
   main.replaceChildren(h('h1', {}, 'ตั้งค่าร้าน'), h('form.card', { style: 'max-width:680px', onsubmit: (e) => { e.preventDefault(); busy(button, async () => {
-    await patch(`/merchant/shops/${shopId}/settings`, { name: name.value, description: description.value, image_url: image.get(), accepting_orders: accepting.checked, capacity: num(capacity), avg_prep_minutes: num(avg), max_active_orders: num(max), hours: hours.map(({ day_of_week, open_time, close_time }) => ({ day_of_week, open_time, close_time })) });
+    await patch(`/merchant/shops/${shopId}/settings`, { name: name.value, description: description.value, image_url: image.get(), accepting_orders: accepting.checked, capacity: num(capacity), avg_prep_minutes: num(avg), max_active_orders: num(max), hours: hours.map(({ day_of_week, open_time, close_time }) => ({ day_of_week, open_time, close_time })), promptpay_phone: promptPhone.value.trim(), promptpay_enabled: promptOn.checked });
     toast('บันทึกแล้ว');
   }); } }, h('label.check', {}, accepting, 'เปิดรับออเดอร์'), field('ชื่อร้าน', name), field('รายละเอียด', description), image.el,
+    h('fieldset', {}, h('legend', {}, 'รับเงินด้วย PromptPay'), h('label.check', {}, promptOn, 'ให้ลูกค้าเลือกจ่ายด้วย PromptPay'), field('เบอร์มือถือที่ผูก PromptPay', promptPhone, 'เฉพาะเบอร์มือถือ ห้ามใส่เลขบัตรประชาชน ลูกค้าที่เลือก PromptPay จะเห็นเบอร์นี้ใน QR ระบบไม่ตรวจยอดให้ ร้านต้องยืนยันรับเงินเอง')),
   field('ทำพร้อมกันได้ (ออเดอร์)', capacity, 'ใช้คำนวณเวลารอ'), field('เวลาทำเฉลี่ย (นาที)', avg), field('ออเดอร์ค้างสูงสุด', max, 'เกินจำนวนนี้ระบบไม่รับออเดอร์ใหม่ เว้นว่าง = ไม่จำกัด'),
   h('h2', {}, 'เวลาเปิดปิด'), box, h('button.btn.ghost', { type: 'button', onclick: () => { hours.push({ day_of_week: 1, open_time: '08:00', close_time: '17:00' }); drawHours(); } }, 'เพิ่มช่วงเวลา'), h('div.row.end', {}, button)));
 }

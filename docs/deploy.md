@@ -8,9 +8,10 @@
 4. ตั้ง HSTS ที่ web server; ถ้าอยู่หลัง reverse proxy ให้ใส่ IP ของ proxy ใน `TRUSTED_PROXY` (คั่นด้วย `,`) ระบบจึงเชื่อ `X-Forwarded-For/Host/Proto`; ไม่ตั้ง = ไม่เชื่อ header เหล่านี้ และใช้ `REMOTE_ADDR` กับ `Host`
 5. สร้าง DB user ที่มีสิทธิ์เฉพาะ database นี้ ห้ามใช้ `root`
 6. ตั้งค่า environment ตาม `.env.example` โดย `APP_ENV=production` ค่าอื่นที่ไม่ใช่ `development` ถือเป็น production เสมอ: ปิด mock login และ test hooks, cookie เป็น `Secure` (จึง login ผ่าน HTTP ธรรมดาไม่ได้)
-7. ให้ PHP เขียนได้เฉพาะ `storage/logs`, `storage/sessions`, `storage/uploads`
-8. รัน `php scripts/migrate.php` **ห้าม**รัน `seed.php`, `e2e.php` และ `tests/` บน production (ทั้งหมดปฏิเสธเองเมื่อไม่ใช่ development)
-9. สร้างข้อมูลเริ่มต้นเอง เพราะไม่มี seed: แถว `roles` 3 แถว (`customer`, `merchant`, `admin`) และ admin คนแรก
+7. ให้ PHP เขียนได้เฉพาะ `storage/logs`, `storage/sessions`, `storage/uploads`, `storage/keys` (หรือตั้ง `PICKUP_TOKEN_KEY` ยาว 32 ตัวขึ้นไป แล้วไม่ต้องให้เขียน `storage/keys`) ห้ามแชร์หรือ commit คีย์นี้; คีย์เปลี่ยน = QR รับอาหารที่แสดงอยู่ใช้ไม่ได้ ลูกค้าเปิดหน้าออเดอร์ใหม่จะได้ QR ใหม่
+8. PromptPay: ทดสอบ QR ด้วยแอปธนาคารจริงกับยอดเล็กก่อนเปิดให้ร้านใช้ ตรวจชื่อผู้รับและยอด ระบบไม่ตรวจว่าเงินเข้า ร้านต้องยืนยันเอง
+9. รัน `php scripts/migrate.php` **ห้าม**รัน `seed.php`, `seed-demo.php`, `demo-history.php`, `e2e.php` และ `tests/` บน production (ทั้งหมดปฏิเสธเองเมื่อไม่ใช่ development)
+10. สร้างข้อมูลเริ่มต้นเอง เพราะไม่มี seed: แถว `roles` 3 แถว (`customer`, `merchant`, `admin`) และ admin คนแรก
 
    ```sql
    INSERT IGNORE INTO roles (name) VALUES ('customer'), ('merchant'), ('admin');
@@ -21,8 +22,8 @@
    INSERT INTO admin_accounts (user_id, login_name, password_hash) VALUES (@u, 'admin', '<hash>');
    ```
 
-10. ตั้ง LINE และ worker ตาม [line-setup.md](line-setup.md)
-11. ตั้ง log rotation ให้ `storage/logs` และกำหนดระยะเวลาเก็บข้อมูลส่วนบุคคล
+11. ตั้ง LINE และ worker ตาม [line-setup.md](line-setup.md)
+12. ตั้ง log rotation ให้ `storage/logs` และกำหนดระยะเวลาเก็บข้อมูลส่วนบุคคล
 
 ## ฐานข้อมูล: MariaDB และ MySQL
 
@@ -54,6 +55,9 @@ IPv6 นับเป็นช่วง `/64`
 | Login ลูกค้า มี session แล้ว | user id | 30 ต่อนาที |
 | Checkout | user id | 20 ต่อนาที |
 | อัปโหลดรูป | user id | 60 ต่อชั่วโมง |
+| รีวิว | user id | 10 ต่อ 10 นาที |
+| เพิ่ม/ลบรายการโปรด | user id | 60 ต่อนาที |
+| QR/เลขออเดอร์ผิดตอนส่งมอบ | ออเดอร์ | 5 ครั้งตลอดอายุออเดอร์ แล้วต้องใช้เหตุผล |
 | รหัสสาธิตผิด (`DEMO_ACCESS_CODE`) | IP | 20 ต่อ 15 นาที |
 
 ตัวนับเป็นช่วงเวลาคงที่ หมดพร้อมช่วงเวลา แถวที่เก่ากว่า 2 ชั่วโมงถูกล้างระหว่างใช้งาน ข้อจำกัด: คร่อมสองช่วงเวลาอาจทำได้ถึง 2 เท่าของเพดานในเวลาสั้น ๆ

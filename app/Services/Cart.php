@@ -24,6 +24,7 @@ final class Cart
         } catch (HttpError) {
             $shop['is_open'] = false;
         }
+        $shop['promptpay'] = PromptPay::numberOf((int) $cart['shop_id']) !== null;
         return ['shop' => $shop] + $priced;
     }
 

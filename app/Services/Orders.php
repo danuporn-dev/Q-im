@@ -18,17 +18,18 @@ final class Orders
         'id', 'order_no', 'status', 'total', 'shop', 'queue', 'payment_status', 'payment_method', 'paid_at', 'reason', 'items',
         'created_at', 'accepted_at', 'preparing_at', 'ready_at', 'completed_at',
     ];
+    public const PAYMENT_METHODS = ['PAY_AT_STORE', 'PROMPTPAY'];
     public const ACTIVE = "('PENDING','ACCEPTED','PREPARING','READY')";
 
     /** @return array{0: int, 1: bool} order id and whether it was created now */
-    public static function create(int $userId, string $key, string $quote): array
+    public static function create(int $userId, string $key, string $quote, string $method = 'PAY_AT_STORE'): array
     {
         if ($id = self::byKey($userId, $key)) {
             return [$id, false];
         }
         for ($attempt = 1; ; $attempt++) {
             try {
-                return Database::tx(static fn (): array => self::checkout($userId, $key, $quote));
+                return Database::tx(static fn (): array => self::checkout($userId, $key, $quote, $method));
             } catch (PDOException $e) {
                 if (!Database::isDuplicate($e) || $attempt >= 3) {
                     throw $e;
@@ -41,7 +42,7 @@ final class Orders
         }
     }
 
-    private static function checkout(int $userId, string $key, string $quote): array
+    private static function checkout(int $userId, string $key, string $quote, string $method): array
     {
         // Lock order everywhere: cart, shop, order, counter.
         $cart = Database::row('SELECT id, shop_id FROM carts WHERE user_id = ? FOR UPDATE', [$userId]);
@@ -61,6 +62,9 @@ final class Orders
         );
         if (!$shop['active'] || !$shop['court_active'] || !$shop['accepting_orders'] || !Catalog::withinHours(Catalog::hours([$shopId])[$shopId] ?? [])) {
             throw HttpError::conflict('SHOP_CLOSED', 'ร้านปิดรับออเดอร์อยู่ในขณะนี้');
+        }
+        if ($method === 'PROMPTPAY' && PromptPay::numberOf($shopId) === null) {
+            throw HttpError::conflict('PAYMENT_METHOD_UNAVAILABLE', 'ร้านนี้ยังไม่รับ PromptPay กรุณาเลือกชำระที่ร้าน');
         }
         if ($shop['max_active_orders'] !== null) {
             $active = (int) Database::value("SELECT COUNT(*) FROM orders WHERE shop_id = ? AND status IN ('PENDING','ACCEPTED','PREPARING')", [$shopId]);
@@ -93,7 +97,7 @@ final class Orders
                 Database::insert('order_item_options', ['order_item_id' => $itemId, 'option_id' => $o['id'], 'name_snapshot' => $o['name'], 'price_delta_snapshot' => $o['price_delta']]);
             }
         }
-        Database::insert('payments', ['order_id' => $orderId, 'amount' => $priced['total']]);
+        Database::insert('payments', ['order_id' => $orderId, 'amount' => $priced['total'], 'method' => $method, 'requested_method' => $method]);
         Database::insert('order_status_logs', ['order_id' => $orderId, 'to_status' => 'PENDING', 'actor_user_id' => $userId, 'created_at' => Clock::now()]);
         Database::run('DELETE FROM carts WHERE id = ?', [$cart['id']]);
         return [$orderId, true];
@@ -134,6 +138,10 @@ final class Orders
         $order += Eta::order($orderId, $order['shop']['id'], $order['status']);
         $order['can_cancel'] = $order['status'] === 'PENDING';
         $order['review'] = $order['status'] === 'COMPLETED' ? Reviews::ofOrder($orderId) : null;
+        // Both QR codes appear only while the food waits at the shop.
+        $order['pickup'] = $order['status'] === 'READY' ? PickupTokens::forCustomer($orderId, rtrim(str_replace('T', ' ', $order['ready_at']), 'Z')) : null;
+        $order['promptpay'] = $order['status'] === 'READY' && $order['payment_status'] === 'UNPAID' && $order['payment_method'] === 'PROMPTPAY'
+            ? PromptPay::forOrder($order['shop']['id'], $order['total']) : null;
         $order['timeline'] = array_map(
             static fn (array $l): array => ['status' => $l['to_status'], 'reason' => self::publicReason($l['to_status'], $l['reason']), 'at' => Clock::iso($l['created_at'])],
             Database::rows('SELECT to_status, reason, created_at FROM order_status_logs WHERE order_id = ? ORDER BY id', [$orderId])
@@ -171,7 +179,7 @@ final class Orders
     }
 
     /**
-     * The full order number is the pickup QR, which only the customer may show. The privacy
+     * The full order number is the fallback for the pickup QR, which only the customer may show. The privacy
      * notice promises that shops see the food and notes only, so the customer's name is left out.
      */
     private static function forMerchant(array $order): array
@@ -196,7 +204,7 @@ final class Orders
         $rows = Database::rows(
             "SELECT o.id, o.public_order_no, o.status, o.total, o.created_at, o.accepted_at, o.preparing_at, o.ready_at, o.completed_at,
                     o.shop_id, s.name AS shop_name, u.display_name AS customer_name, q.queue_number, q.business_date,
-                    p.status AS payment_status, p.paid_at, p.method,
+                    p.status AS payment_status, p.paid_at, IF(p.status = 'PAID', p.method, p.requested_method) AS method,
                     (SELECT l.reason FROM order_status_logs l WHERE l.order_id = o.id AND l.reason IS NOT NULL ORDER BY l.id DESC LIMIT 1) AS reason
              $from WHERE $where ORDER BY $sort LIMIT $limit OFFSET $offset",
             $params

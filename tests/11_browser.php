@@ -39,10 +39,7 @@ try {
     $b->open("$base/customer/#/cart");
     T::ok($b->sees('ยืนยันออเดอร์ ฿45'), 'cart page with total');
     $b->js("{const q=[...document.querySelectorAll('button')].find(e=>e.innerText.startsWith('ยืนยันออเดอร์'));q.click();q.click();q.click();}");
-    T::ok($b->sees('QR รับอาหาร') && $b->until("document.querySelector('.qr img')?.naturalWidth > 0"), 'tracking page after checkout');
-    // The QR drawn by qrcode.js must read back as the same text with jsQR, the shop's reader.
-    $decoded = $b->js("new Promise((ok,no)=>{const s=document.createElement('script');s.src='../assets/js/vendor/jsQR.min.js';s.onerror=no;s.onload=()=>{const i=document.querySelector('.qr img'),c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight;const x=c.getContext('2d');x.drawImage(i,0,0);const d=x.getImageData(0,0,c.width,c.height);ok(jsQR(d.data,d.width,d.height)?.data??null);};document.head.append(s);})");
-    T::eq(Database::value('SELECT public_order_no FROM orders WHERE shop_id = ?', [$s['shop']]), $decoded, 'QR decodes back to the order number with jsQR');
+    T::ok($b->sees('QR รับอาหารจะแสดงเมื่ออาหารพร้อม') && $b->sees('เลขออเดอร์'), 'tracking page after checkout');
     T::eq(1, (int) Database::value('SELECT COUNT(*) FROM orders WHERE shop_id = ?', [$s['shop']]), 'triple click makes one order');
     $order = (int) Database::value('SELECT id FROM orders WHERE shop_id = ?', [$s['shop']]);
     $b->send('Page.reload');

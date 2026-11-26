@@ -71,6 +71,11 @@ final class OrderFlow
         [$from, $to, $needsReason, $event] = self::ACTIONS[$action];
         $done = self::DONE[$action] ?? [$to];
         Database::tx(static function () use ($userId, $orderId, $in, $from, $to, $needsReason, $event, $done): void {
+            // The kitchen slots need the shop row; take it before the order row, the lock order used everywhere.
+            $shopId = Database::value('SELECT o.shop_id FROM orders o JOIN shop_members m ON m.shop_id = o.shop_id AND m.user_id = ? WHERE o.id = ?', [$userId, $orderId]);
+            if ($shopId !== false) {
+                Database::row('SELECT id FROM shops WHERE id = ? FOR UPDATE', [$shopId]);
+            }
             $order = self::lockForMember($userId, $orderId);
             if (in_array($order['status'], $done, true)) {
                 return; // repeated click: same result, no side effects
@@ -89,6 +94,9 @@ final class OrderFlow
                 }
                 self::move($order, $step, $userId, $step === $to ? $reason : null);
                 $order['status'] = $step;
+            }
+            if ($to === 'READY') {
+                PickupTokens::issue($orderId, Clock::now());
             }
             if ($event !== null) {
                 Notifications::enqueue($orderId, (int) $order['user_id'], $event);
@@ -122,44 +130,59 @@ final class OrderFlow
         }
     }
 
-    public static function confirmPayment(int $userId, int $orderId): void
+    public static function confirmPayment(int $userId, int $orderId, array $in = []): void
     {
-        Database::tx(static function () use ($userId, $orderId): void {
+        Database::tx(static function () use ($userId, $orderId, $in): void {
             $order = self::lockForMember($userId, $orderId);
-            $payment = Database::row('SELECT id, status FROM payments WHERE order_id = ? FOR UPDATE', [$orderId]);
+            $payment = Database::row('SELECT id, status, requested_method FROM payments WHERE order_id = ? FOR UPDATE', [$orderId]);
             if ($payment['status'] === 'PAID') {
                 return;
             }
             if ($order['status'] !== 'READY') {
                 throw HttpError::conflict('INVALID_STATE', 'รับชำระได้เมื่ออาหารพร้อมรับ', ['status' => $order['status']]);
             }
-            self::markPaid($userId, $order, (int) $payment['id']);
+            self::markPaid($userId, $order, (int) $payment['id'], self::receivedMethod($in, $payment, (int) $order['shop_id']));
         });
     }
 
     /**
-     * Hand-over. The QR on the customer's screen holds the full order number, which shops only see
-     * masked. payment_received: true confirms the money in the same step, so the shop taps once.
+     * Hand-over. pickup_qr is what the shop scanned or typed: the single-use token in the customer's QR
+     * (D38), or, as the fallback, the full order number, which shops only see masked. payment_received: true
+     * is the shop's own confirmation of the money; method says how it arrived.
      */
     public static function complete(int $userId, int $orderId, array $in): void
     {
         // A wrong code is counted and audited, so that transaction must commit before the error is returned.
         $wrong = Database::tx(static function () use ($userId, $orderId, $in): ?HttpError {
             $order = self::lockForMember($userId, $orderId);
+            $scan = Input::optionalText($in, 'pickup_qr', 'QR รับอาหาร', 200);
             if ($order['status'] === 'COMPLETED') {
+                // A token works once; repeating the typed number or the reason stays a harmless repeat.
+                if ($scan !== null && PickupTokens::looksLikeToken($scan)) {
+                    throw HttpError::conflict('PICKUP_QR_USED', 'QR นี้ใช้ไม่ได้แล้ว ออเดอร์ส่งมอบไปแล้ว');
+                }
                 return null;
             }
             if ($order['status'] !== 'READY') {
                 throw HttpError::conflict('INVALID_STATE', 'ส่งมอบได้เมื่ออาหารพร้อมรับ', ['status' => $order['status']]);
             }
-            $scan = Input::optionalText($in, 'pickup_qr', 'QR รับอาหาร', 32);
+            if ($scan !== null && str_starts_with($scan, '000201')) {
+                // The customer's PromptPay QR is on the same screen. It is no guess, so it is not counted.
+                throw new HttpError(422, 'PICKUP_QR_PROMPTPAY', 'นั่นคือ QR PromptPay ให้สแกน QR รับอาหาร');
+            }
             $reason = null;
             if ($scan !== null) {
                 $failures = (int) $order['pickup_failures'];
                 if ($failures >= self::PICKUP_ATTEMPTS) {
                     throw self::scanLocked();
                 }
-                if (!hash_equals($order['public_order_no'], strtoupper($scan))) {
+                $result = PickupTokens::looksLikeToken($scan)
+                    ? PickupTokens::check($orderId, $scan)
+                    : (hash_equals($order['public_order_no'], strtoupper($scan)) ? 'OK' : 'WRONG');
+                if ($result === 'EXPIRED') {
+                    throw HttpError::conflict('PICKUP_QR_EXPIRED', 'QR หมดอายุ ใช้เลขออเดอร์จากหน้าจอลูกค้า หรือส่งมอบโดยระบุเหตุผล');
+                }
+                if ($result !== 'OK') {
                     Database::run('UPDATE orders SET pickup_failures = pickup_failures + 1 WHERE id = ?', [$orderId]);
                     Audit::log($userId, 'pickup.qr_wrong', 'order', $orderId, ['shop_id' => (int) $order['shop_id'], 'attempt' => $failures + 1]);
                     $left = self::PICKUP_ATTEMPTS - $failures - 1;
@@ -169,17 +192,18 @@ final class OrderFlow
                 $reason = 'รับโดยไม่สแกน QR: ' . Input::text($in, 'override_reason', 'QR รับอาหารหรือเหตุผล', 300, 3);
             }
             // Checked after the QR, so the shop learns that the code is right and then confirms the money itself.
-            $payment = Database::row('SELECT id, status FROM payments WHERE order_id = ? FOR UPDATE', [$orderId]);
+            $payment = Database::row('SELECT id, status, requested_method FROM payments WHERE order_id = ? FOR UPDATE', [$orderId]);
             if ($payment['status'] !== 'PAID' && ($in['payment_received'] ?? false) !== true) {
                 throw HttpError::conflict('PAYMENT_REQUIRED', 'ต้องยืนยันการชำระเงินก่อนส่งมอบ', ['total' => $order['total']]);
             }
             if ($payment['status'] !== 'PAID') {
-                self::markPaid($userId, $order, (int) $payment['id']);
+                self::markPaid($userId, $order, (int) $payment['id'], self::receivedMethod($in, $payment, (int) $order['shop_id']));
             }
             if ($reason !== null) {
                 Audit::log($userId, self::PICKUP_OVERRIDE, 'order', $orderId, ['shop_id' => (int) $order['shop_id'], 'reason' => $reason]);
             }
             self::move($order, 'COMPLETED', $userId, $reason);
+            PickupTokens::spend($orderId);
             return null;
         });
         if ($wrong !== null) {
@@ -193,10 +217,21 @@ final class OrderFlow
     }
 
     /** The caller holds the order and payment row locks. */
-    private static function markPaid(int $userId, array $order, int $paymentId): void
+    private static function markPaid(int $userId, array $order, int $paymentId, string $method): void
     {
-        Database::run("UPDATE payments SET status = 'PAID', paid_at = ?, confirmed_by = ? WHERE id = ?", [Clock::now(), $userId, $paymentId]);
-        Audit::log($userId, 'payment.confirm', 'order', (int) $order['id'], ['amount' => $order['total']]);
+        Database::run("UPDATE payments SET status = 'PAID', method = ?, paid_at = ?, confirmed_by = ? WHERE id = ?", [$method, Clock::now(), $userId, $paymentId]);
+        Audit::log($userId, 'payment.confirm', 'order', (int) $order['id'], ['amount' => $order['total'], 'method' => $method]);
+    }
+
+    /** How the shop says the money arrived; the customer's choice when the shop does not say. */
+    private static function receivedMethod(array $in, array $payment, int $shopId): string
+    {
+        $method = $in['method'] ?? $payment['requested_method'];
+        $offered = $method === 'PROMPTPAY' && ($payment['requested_method'] === 'PROMPTPAY' || PromptPay::numberOf($shopId) !== null);
+        if ($method !== 'PAY_AT_STORE' && !$offered) {
+            throw HttpError::invalid('วิธีรับเงินไม่ถูกต้อง', ['field' => 'method']);
+        }
+        return $method;
     }
 
     /** The order row is locked, and payments are only confirmed under that lock, so the check stays true until commit. */

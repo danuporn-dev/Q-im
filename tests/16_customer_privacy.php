@@ -14,7 +14,7 @@ $staffName = (string) Database::value('SELECT display_name FROM users WHERE id =
 $secret = 'ความลับร้าน' . Fixture::run();
 
 $list = ['accepted_at', 'completed_at', 'created_at', 'id', 'items', 'order_no', 'paid_at', 'payment_method', 'payment_status', 'preparing_at', 'queue', 'ready_at', 'reason', 'shop', 'status', 'total'];
-$detail = [...$list, 'ahead', 'can_cancel', 'eta_minutes', 'review', 'timeline'];
+$detail = [...$list, 'ahead', 'can_cancel', 'eta_minutes', 'pickup', 'promptpay', 'review', 'timeline'];
 sort($detail);
 $keys = static function (array $x): array {
     $k = array_keys($x);

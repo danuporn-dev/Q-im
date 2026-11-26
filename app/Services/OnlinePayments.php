@@ -56,6 +56,8 @@ final class OnlinePayments
             !in_array($status, self::PAYABLE, true) => 'waiting_shop',
             $active !== null && $active['status'] === 'processing' => 'processing',
             $active !== null && $active['qr_data'] !== null && $active['qr_expires_at'] !== null && $active['qr_expires_at'] > Clock::now() => 'qr',
+            // The QR was shown and its time is up: the customer asks for a new one (the same PaymentIntent if it still works).
+            $active !== null => 'expired',
             default => 'payable',
         };
         $refundDue = false;

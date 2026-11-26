@@ -77,7 +77,7 @@ export const time = (iso) => (iso ? new Date(iso).toLocaleTimeString('th-TH', { 
 export const dateTime = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', { ...zone, day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
 export const today = () => new Intl.DateTimeFormat('en-CA', zone).format(new Date());
 export const eta = (minutes) => (minutes === null || minutes === undefined ? 'ยังประเมินเวลาไม่ได้' : `ประมาณ ${minutes} นาที`);
-export const METHOD = { PAY_AT_STORE: 'ชำระที่ร้าน (เงินสด)', PROMPTPAY: 'PromptPay' };
+export const METHOD = { PAY_AT_STORE: 'ชำระที่ร้าน (เงินสด)', PROMPTPAY: 'PromptPay', STRIPE_PROMPTPAY: 'PromptPay ออนไลน์' };
 export const queueNo = (n) => 'Q-' + String(n).padStart(3, '0');
 
 export const STATUS = {

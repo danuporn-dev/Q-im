@@ -489,7 +489,18 @@ async function cartPage(alive) {
 }
 
 let payWith = 'PAY_AT_STORE';
+/** Online PromptPay through the payment gateway (D42); Stripe's smallest payment is 10 baht. */
+const online = () => config.payment_mode === 'gateway';
+const ONLINE_MIN = 10;
 function paymentChoice() {
+  if (online()) {
+    const enough = Number(cart.total) >= ONLINE_MIN;
+    if (!enough && payWith === 'STRIPE_PROMPTPAY') payWith = 'PAY_AT_STORE';
+    if (payWith === 'PROMPTPAY') payWith = 'PAY_AT_STORE';
+    const tile = (value, label, hint, disabled) => h('label.method', {}, h('input', { type: 'radio', name: 'payment_method', value, disabled, checked: payWith === value, onchange: () => { payWith = value; } }), h('span', {}, h('b', {}, label), h('span.muted', {}, hint)));
+    return h('fieldset.methods', {}, h('legend', {}, 'วิธีชำระ'), tile('PAY_AT_STORE', 'ชำระที่ร้านตอนรับ', 'จ่ายเงินสดกับร้าน'),
+      tile('STRIPE_PROMPTPAY', 'จ่ายออนไลน์ (PromptPay)', enough ? 'สแกนจ่ายได้เมื่อร้านรับออเดอร์ ระบบยืนยันยอดให้อัตโนมัติ' : `จ่ายออนไลน์ได้ตั้งแต่ ${baht(ONLINE_MIN)}`, !enough));
+  }
   if (!cart.shop.promptpay) {
     payWith = 'PAY_AT_STORE';
     return h('div.row.between', {}, h('span.eyebrow', {}, 'วิธีชำระ'), h('b', {}, 'ชำระที่ร้านตอนรับ'));
@@ -501,12 +512,12 @@ function paymentChoice() {
 
 const checkout = (button, redraw) => busy(button, async () => {
   try {
-    const order = await post('/orders', { idempotency_key: checkoutKey(cart.quote), quote: cart.quote, payment_method: cart.shop.promptpay ? payWith : 'PAY_AT_STORE' });
+    const order = await post('/orders', { idempotency_key: checkoutKey(cart.quote), quote: cart.quote, payment_method: online() || cart.shop.promptpay ? payWith : 'PAY_AT_STORE' });
     forgetKey();
     cart = await get('/cart').catch(() => null);
     location.hash = `#/order/${order.id}`;
   } catch (e) {
-    if (['PRICE_CHANGED', 'ITEM_UNAVAILABLE', 'SHOP_CLOSED', 'CART_EMPTY', 'PAYMENT_METHOD_UNAVAILABLE'].includes(e.code)) {
+    if (['PRICE_CHANGED', 'ITEM_UNAVAILABLE', 'SHOP_CLOSED', 'CART_EMPTY', 'PAYMENT_METHOD_UNAVAILABLE', 'ONLINE_MINIMUM'].includes(e.code)) {
       forgetKey();
       cart = await get('/cart');
       redraw();
@@ -596,8 +607,9 @@ function tracking(o, redraw) {
     o.promptpay ? h('section.card', { style: 'text-align:center' }, h('h2', {}, 'จ่ายเงินด้วย PromptPay'), o.promptpay.payload
       ? [h('p.muted', {}, 'สแกนด้วยแอปธนาคาร ตรวจชื่อผู้รับและยอดก่อนโอน (QR นี้ไม่ใช่ QR รับอาหาร)'), qrImage(o.promptpay.payload, 'QR จ่ายเงิน PromptPay'), h('div.price', { style: 'font-size:1.5rem' }, baht(o.promptpay.amount)), h('p.notice', {}, 'รอร้านตรวจสอบยอด การสแกนยังไม่ถือว่าชำระแล้ว')]
       : h('p.notice', {}, 'ร้านปิดรับ PromptPay แล้ว กรุณาชำระที่ร้าน')) : null,
+    o.online_payment ? onlinePayment(o, redraw) : null,
     h('section.card', {}, h('h2', {}, 'สถานะ'), h('ol.steps', {}, steps.map((s) => h('li' + (at[s] ? '.done' : ''), { 'aria-current': s === o.status ? 'step' : null }, STATUS[s][0], at[s] ? h('span.muted', {}, ' ', time(at[s])) : null)))),
-    h('section.card', {}, h('h2', {}, 'รายการ'), o.items.map((i) => h('div.row.between.line', {}, picture(i.image_url, i.name, 'pic.sm', i.art), h('span.grow', {}, `${i.quantity} × ${i.name}`, i.options.length ? h('div.muted', {}, i.options.map((x) => x.name).join(', ')) : null, i.note ? h('div.muted', {}, 'หมายเหตุ: ', i.note) : null), baht(i.line_total))), h('div.total', {}, h('span', {}, 'ยอดรวม'), h('span', {}, baht(o.total))), h('p.muted', {}, o.payment_status === 'PAID' ? `✓ ชำระแล้ว · ${METHOD[o.payment_method]}` : closed ? '' : o.payment_method === 'PROMPTPAY' ? 'เลือกจ่ายด้วย PromptPay เมื่ออาหารพร้อม' : 'ชำระที่ร้านตอนรับอาหาร')),
+    h('section.card', {}, h('h2', {}, 'รายการ'), o.items.map((i) => h('div.row.between.line', {}, picture(i.image_url, i.name, 'pic.sm', i.art), h('span.grow', {}, `${i.quantity} × ${i.name}`, i.options.length ? h('div.muted', {}, i.options.map((x) => x.name).join(', ')) : null, i.note ? h('div.muted', {}, 'หมายเหตุ: ', i.note) : null), baht(i.line_total))), h('div.total', {}, h('span', {}, 'ยอดรวม'), h('span', {}, baht(o.total))), h('p.muted', {}, o.payment_status === 'PAID' ? `✓ ชำระแล้ว · ${METHOD[o.payment_method]}` : closed ? '' : o.payment_method === 'PROMPTPAY' ? 'เลือกจ่ายด้วย PromptPay เมื่ออาหารพร้อม' : o.payment_method === 'STRIPE_PROMPTPAY' ? 'เลือกจ่ายออนไลน์ด้วย PromptPay' : 'ชำระที่ร้านตอนรับอาหาร')),
     o.status === 'COMPLETED' ? reviewSection(o, redraw) : null,
     o.can_cancel ? h('button.btn.danger.ghost.block', { type: 'button', onclick: async (e) => {
       const button = e.currentTarget;
@@ -607,6 +619,73 @@ function tracking(o, redraw) {
     } }, 'ยกเลิกออเดอร์') : ['ACCEPTED', 'PREPARING'].includes(o.status) ? h('p.muted', {}, 'ร้านรับออเดอร์แล้ว หากต้องการยกเลิกกรุณาติดต่อร้าน') : null,
   ].filter(Boolean);
 }
+
+/**
+ * Online PromptPay (D42), as the Figma Payment_prompt screen: the QR in a light frame, the total, then the action.
+ * Only the server decides that the order is paid (Stripe's webhook, or "check payment" asking Stripe); the page
+ * keeps polling as before and shows the result.
+ */
+function onlinePayment(o, redraw) {
+  const p = o.online_payment;
+  const act = (path, body) => (e) => busy(e.currentTarget, async () => { try { await post(`/orders/${o.id}/${path}`, body); } finally { await redraw(); } });
+  const toStore = h('button.btn.ghost.block', { type: 'button', onclick: async (e) => {
+    const button = e.currentTarget;
+    if (await confirmBox('เปลี่ยนเป็นจ่ายที่ร้าน?', 'QR ออนไลน์จะถูกยกเลิก แล้วจ่ายเงินสดกับร้านตอนรับอาหาร', 'เปลี่ยนเป็นจ่ายที่ร้าน')) {
+      await act('payment-method', { payment_method: 'PAY_AT_STORE' })({ currentTarget: button });
+    }
+  } }, 'เปลี่ยนเป็นจ่ายที่ร้าน');
+  const title = h('h2', {}, 'จ่ายออนไลน์ด้วย PromptPay');
+  if (p.state === 'paid') {
+    return h('section.card.paybox', {}, title, h('p.notice.ok', { role: 'status' }, '✓ ชำระแล้วออนไลน์ ร้านไม่ต้องเก็บเงินอีก'), p.refund_due ? refundNote() : null);
+  }
+  if (p.state === 'closed') return p.refund_due ? h('section.card.paybox', {}, title, refundNote()) : null;
+  if (p.state === 'waiting_shop') {
+    return h('section.card.paybox', {}, title, h('p.muted', {}, 'ปุ่มชำระจะแสดงเมื่อร้านรับออเดอร์ เพื่อไม่ให้จ่ายแล้วร้านปฏิเสธ'), toStore);
+  }
+  if (p.state === 'processing') {
+    return h('section.card.paybox', {}, title, h('p.notice', { role: 'status' }, 'ธนาคารกำลังดำเนินการ รอสักครู่'), h('button.btn.block', { type: 'button', onclick: act('online-payment/check') }, 'ตรวจสถานะการชำระ'));
+  }
+  if (p.state === 'expired') {
+    return h('section.card.paybox', {}, title, h('p', { 'aria-live': 'polite' }, 'QR หมดอายุแล้ว'), h('button.btn.block', { type: 'button', onclick: act('online-payment') }, 'ขอ QR ใหม่'),
+      h('button.btn.ghost.block', { type: 'button', onclick: act('online-payment/check') }, 'ตรวจสถานะการชำระ'), toStore);
+  }
+  if (p.state === 'payable') {
+    return h('section.card.paybox', {}, title, h('div.total', {}, h('span.eyebrow', {}, 'ยอดชำระ'), h('span.bigprice', {}, baht(o.total))),
+      h('button.btn.block', { type: 'button', onclick: act('online-payment') }, `แสดง QR จ่าย ${baht(o.total)}`), toStore);
+  }
+  // state === 'qr'
+  const left = h('b', {});
+  const renew = h('button.btn.block', { type: 'button', hidden: true, onclick: act('online-payment') }, 'ขอ QR ใหม่');
+  const frameBox = h('div.payqr', {}, h('div.payqr-head', {}, 'PromptPay'), qrImage(p.qr.data, `QR จ่ายเงิน PromptPay ยอด ${baht(o.total)}`));
+  const tick = () => {
+    const ms = new Date(p.qr.expires_at) - Date.now();
+    if (!frameBox.isConnected && ms < 0) return false;
+    if (ms <= 0) {
+      left.textContent = 'QR หมดอายุแล้ว';
+      frameBox.classList.add('expired');
+      renew.hidden = false;
+      return false;
+    }
+    const s = Math.ceil(ms / 1000);
+    left.textContent = `QR ใช้ได้อีก ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} นาที`;
+    return true;
+  };
+  tick();
+  const timer = setInterval(() => { if (!tick() || !document.body.contains(left)) clearInterval(timer); }, 1000);
+  const save = h('button.btn.block', { type: 'button', onclick: () => {
+    const url = qrCache.get(p.qr.data);
+    if (!url) return;
+    h('a', { href: url, download: `qim-promptpay-${o.order_no}.png` }).click();
+  } }, 'บันทึกรูป QR');
+  return h('section.card.paybox', {}, title,
+    h('p.muted', {}, 'สแกนด้วยแอปธนาคาร จ่ายแล้วระบบยืนยันให้อัตโนมัติ ไม่ต้องส่งสลิป (QR นี้ไม่ใช่ QR รับอาหาร)'),
+    frameBox, h('p', { 'aria-live': 'polite' }, left), save,
+    h('div.total', {}, h('span.eyebrow', {}, 'ยอดชำระ'), h('span.bigprice', {}, baht(o.total))),
+    renew, h('button.btn.ghost.block', { type: 'button', onclick: act('online-payment/check') }, 'ตรวจสถานะการชำระ'), toStore,
+    p.qr.test_url ? h('p.muted', {}, 'โหมดทดสอบ: ', h('a', { href: p.qr.test_url, target: '_blank', rel: 'noopener noreferrer' }, 'เปิดหน้าทดสอบของ Stripe เพื่อจำลองการจ่าย')) : null);
+}
+
+const refundNote = () => h('p.notice', { role: 'status' }, 'ออเดอร์นี้ถูกยกเลิกหลังจ่ายเงินออนไลน์ ร้านจะคืนเงินให้ทาง Stripe ซึ่งจะส่งอีเมลขอเลขบัญชีจากผู้ให้บริการ กรุณาติดต่อร้านถ้ายังไม่ได้รับเงินคืน');
 
 /** Draws one QR code: the single-use pickup token, or the PromptPay text. */
 const qrCache = new Map();

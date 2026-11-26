@@ -134,7 +134,7 @@ function watchBell() {
   stopBell = poll(check, 6000);
 }
 
-const lines = (o) => h('ul', {}, o.items.map((i) => h('li', {}, `${i.quantity} × ${i.name}`, i.options.length ? h('div.muted', {}, i.options.map((x) => x.name).join(', ')) : null, i.note ? h('div', {}, 'หมายเหตุ: ', i.note) : null)));
+const lines = (o) => h('ul.lines', {}, o.items.map((i) => h('li', {}, picture(i.image_url, i.name, 'pic.sm', i.art), h('div', {}, `${i.quantity} × ${i.name}`, i.options.length ? h('div.muted', {}, i.options.map((x) => x.name).join(', ')) : null, i.note ? h('div', {}, 'หมายเหตุ: ', i.note) : null))));
 
 function card(o, refresh, shop) {
   const readyAlert = shop.ready_alert_minutes;
@@ -268,6 +268,7 @@ async function pickup(o, refresh, button, askMethod) {
       field('เหตุผลและวิธีที่ตรวจสอบ', reason, 'ระบบบันทึกไว้ให้ผู้ดูแลตรวจสอบ'), h('div.row.end', {}, reasonButton)));
     return [
       h('p.notice', {}, paid ? '✓ ชำระแล้ว สแกน QR เพื่อส่งมอบ' : h('span', {}, 'ยอด ', h('b', {}, baht(o.total)), ' สแกน QR ก่อน แล้วยืนยันรับเงิน')),
+      lines(o),
       scanArea, payArea, h('div', {}, reasonBox),
     ];
   });
@@ -362,7 +363,7 @@ async function menus(main) {
     const list = data.menus.filter((m) => m.category_id === (category?.id ?? null));
     if (!category && !list.length) return null;
     return h('section.stack', {}, h('div.row', {}, h('h2', {}, category ? category.name : 'ไม่มีหมวดหมู่', category && !category.active ? ' (ซ่อน)' : ''), category ? h('button.btn.ghost', { type: 'button', onclick: () => editCategory(category, reload) }, 'แก้หมวด') : null),
-      h('div.grid', {}, list.map((m) => h('div.item' + (m.active && m.available ? '' : '.off'), {}, picture(m.image_url, m.name), h('div.grow', {}, h('h3', {}, m.name), h('span.price', {}, baht(m.price)), h('div.muted', {}, !m.active ? 'เลิกขาย' : m.available ? 'พร้อมขาย' : 'หมด'),
+      h('div.grid', {}, list.map((m) => h('div.item' + (m.active && m.available ? '' : '.off'), {}, picture(m.image_url, m.name, 'pic', m.art), h('div.grow', {}, h('h3', {}, m.name), h('span.price', {}, baht(m.price)), h('div.muted', {}, !m.active ? 'เลิกขาย' : m.available ? 'พร้อมขาย' : 'หมด'),
         h('div.row', {}, m.active ? h('button.btn.ghost', { type: 'button', onclick: (e) => busy(e.currentTarget, async () => { await patch(`/merchant/menus/${m.id}`, { available: !m.available }); await reload(); }) }, m.available ? 'แจ้งหมด' : 'มีแล้ว') : null, h('button.btn.ghost', { type: 'button', onclick: () => editMenu(m, data.categories, reload) }, 'แก้ไข')))))));
   };
   main.replaceChildren(h('div.row.between', {}, h('h1', {}, 'เมนู'), h('div.row', {}, h('button.btn.ghost', { type: 'button', onclick: () => editCategory(null, reload) }, 'เพิ่มหมวด'), h('button.btn', { type: 'button', onclick: () => editMenu(null, data.categories, reload) }, 'เพิ่มเมนู'))),

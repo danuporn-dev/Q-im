@@ -91,12 +91,59 @@ export const STATUS = {
 };
 export const badge = (status) => h('span.badge.' + (STATUS[status]?.[1] || 'done'), {}, h('span', { 'aria-hidden': 'true' }, STATUS[status]?.[2] || ''), ' ', STATUS[status]?.[0] || status);
 
-export function picture(url, name, cls = 'pic') {
-  const tile = () => h('div.' + cls + '.tile', { 'aria-hidden': 'true', style: `--hue:${[...(name || '')].reduce((a, c) => (a * 31 + c.codePointAt(0)) % 360, 7)}` }, [...(name || '?').replace(/^[เแโใไ]/, '')][0] || '?');
-  if (!url) return tile();
-  const src = url.startsWith('image:') ? `${API}/images/${url.slice(6)}` : url;
-  const img = h('img.' + cls, { src, alt: '', loading: 'lazy' });
-  img.addEventListener('error', () => img.replaceWith(tile()), { once: true });
+const ART = new URL('../images/art/', import.meta.url).href;
+const ART_KINDS = ['rice', 'noodle', 'fried', 'drink', 'dessert', 'other', 'shop'];
+/** Classes shown large: the full picture; the others get the 480 px thumbnail. */
+const LARGE = /^(cover|hero|preview)\b/;
+/**
+ * Addresses that failed, or showed nothing for SLOW ms after first coming into view: the drawn picture is used
+ * instead from then on. Counted per address, not per element: a page that redraws while polling replaces its
+ * images, and a lazy image taken out of the page never finishes, so a slow address would otherwise stay empty.
+ */
+const unreachable = new Set();
+const loaded = new Set();
+const firstSeen = new Map();
+const SLOW = 8000;
+const inView = typeof IntersectionObserver === 'function' ? new IntersectionObserver((entries) => {
+  for (const { target, isIntersecting } of entries) {
+    if (isIntersecting) {
+      inView.unobserve(target);
+      target.dispatchEvent(new Event('qim:visible'));
+    }
+  }
+}) : null;
+
+/**
+ * The picture of a menu or a shop, with its name as alt text. Without a picture, or when it cannot load, the drawn
+ * picture of its kind (art: FoodArt::KINDS or 'shop') stands in, so there is never an empty box or a broken image.
+ * Without a kind (a person's avatar) the first letter does. The size is set by the CSS of cls before anything loads.
+ */
+export function picture(url, name, cls = 'pic', art) {
+  const label = name || '';
+  const lazy = cls.startsWith('hero') ? 'eager' : 'lazy';
+  const letter = () => h('div.' + cls + '.tile', { 'aria-hidden': 'true', style: `--hue:${[...label].reduce((a, c) => (a * 31 + c.codePointAt(0)) % 360, 7)}` }, [...(label || '?').replace(/^[เแโใไ]/, '')][0] || '?');
+  const drawn = () => {
+    if (!art) return letter();
+    const img = h('img.' + cls + '.art', { src: `${ART}${ART_KINDS.includes(art) ? art : 'other'}.svg`, alt: label, width: 400, height: 300, loading: lazy, decoding: 'async' });
+    img.addEventListener('error', () => img.replaceWith(letter()), { once: true });
+    return img;
+  };
+  if (!url || unreachable.has(url)) return drawn();
+  const large = LARGE.test(cls);
+  const src = url.startsWith('image:') ? `${API}/images/${url.slice(6)}${large ? '' : '/thumb'}` : url;
+  const img = h('img.' + cls, { src, alt: label, width: large ? 1200 : 480, height: large ? 900 : 360, loading: lazy, decoding: 'async' });
+  const giveUp = () => {
+    unreachable.add(url);
+    if (img.isConnected) img.replaceWith(drawn());
+  };
+  img.addEventListener('error', giveUp, { once: true });
+  img.addEventListener('load', () => loaded.add(url), { once: true });
+  img.addEventListener('qim:visible', () => {
+    if (loaded.has(url)) return;
+    if (!firstSeen.has(url)) firstSeen.set(url, Date.now());
+    setTimeout(() => { if (!loaded.has(url) && !(img.complete && img.naturalWidth)) giveUp(); }, Math.max(0, SLOW - (Date.now() - firstSeen.get(url))));
+  }, { once: true });
+  inView?.observe(img);
   return img;
 }
 

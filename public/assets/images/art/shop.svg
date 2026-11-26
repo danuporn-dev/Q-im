@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <rect width="400" height="300" fill="#f5e5db"/>
+  <circle cx="200" cy="160" r="122" fill="#fbefe7"/>
+  <rect x="96" y="104" width="208" height="150" rx="10" fill="#ffffff"/>
+  <rect x="80" y="44" width="240" height="30" rx="10" fill="#32343e"/>
+  <rect x="160" y="50" width="80" height="18" rx="6" fill="#ff7622"/>
+  <path d="M80 74h240v28c0 13-11 22-24 22s-24-9-24-22c0 13-11 22-24 22s-24-9-24-22c0 13-11 22-24 22s-24-9-24-22c0 13-11 22-24 22s-24-9-24-22c0 13-11 22-24 22s-24-9-24-22z" fill="#ff7622"/>
+  <path d="M128 74v28c0 13-11 22-24 22s-24-9-24-22V74zM224 74v28c0 13-11 22-24 22s-24-9-24-22V74zM320 74v28c0 13-11 22-24 22s-24-9-24-22V74z" fill="#ffffff"/>
+  <rect x="116" y="146" width="168" height="50" rx="8" fill="#f5e5db"/>
+  <circle cx="150" cy="170" r="14" fill="#ff7622"/>
+  <circle cx="200" cy="170" r="14" fill="#f3bd5f"/>
+  <circle cx="250" cy="170" r="14" fill="#4f9d5a"/>
+  <rect x="84" y="206" width="232" height="22" rx="8" fill="#32343e"/>
+  <rect x="104" y="228" width="16" height="30" fill="#32343e"/>
+  <rect x="280" y="228" width="16" height="30" fill="#32343e"/>
+</svg>

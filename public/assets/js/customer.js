@@ -244,7 +244,7 @@ async function favorites(alive) {
   const draw = async () => {
     const data = await get('/favorites');
     const remove = (kind, id) => h('button.btn.danger.ghost', { type: 'button', onclick: (e) => busy(e.currentTarget, async () => { await api('DELETE', `/favorites/${kind}/${id}`); await draw(); }) }, 'เอาออก');
-    const row = (kind, x, title, note, href) => h('div.item' + (note ? '.off' : ''), {}, picture(x.image_url, x.name), h('div.grow', {}, h('h3', {}, href ? h('a', { href }, title) : title), note ? h('p.muted', {}, note) : null, remove(kind, x.id)));
+    const row = (kind, x, title, note, href) => h('div.item' + (note ? '.off' : ''), {}, picture(x.image_url, x.name, 'pic', kind === 'shops' ? 'shop' : x.art), h('div.grow', {}, h('h3', {}, href ? h('a', { href }, title) : title), note ? h('p.muted', {}, note) : null, remove(kind, x.id)));
     box.replaceChildren(
       h('h2', {}, 'ร้านโปรด'), data.shops.length ? h('div.list', {}, data.shops.map((s) => row('shops', s, s.name, !s.listed ? 'ร้านนี้ไม่เปิดให้บริการแล้ว' : s.is_open ? '' : 'ปิดอยู่ตอนนี้', s.listed ? `#/shop/${s.id}` : null))) : empty('ยังไม่มีร้านโปรด'),
       h('h2', {}, 'เมนูโปรด'), data.menus.length ? h('div.list', {}, data.menus.map((m) => row('menus', m, `${m.name} · ${m.shop.name}${m.price === null ? '' : ` · ${baht(m.price)}`}`, !m.listed ? 'เมนูนี้เลิกขายแล้ว' : m.available ? '' : 'หมดชั่วคราว', m.listed ? `#/shop/${m.shop.id}` : null))) : empty('ยังไม่มีเมนูโปรด'),
@@ -290,11 +290,11 @@ function reviewSection(o, redraw) {
 }
 
 /** A stall: large picture on the home page, compact row in search results. */
-const shopCard = (s) => h('a.item.stall' + (s.matched_menus ? '.compact' : '') + (s.is_open ? '' : '.off'), { href: `#/shop/${s.id}` }, picture(s.image_url, s.name, s.matched_menus ? 'pic' : 'cover'), h('div.grow', {},
+const shopCard = (s) => h('a.item.stall' + (s.matched_menus ? '.compact' : '') + (s.is_open ? '' : '.off'), { href: `#/shop/${s.id}` }, picture(s.image_url, s.name, s.matched_menus ? 'pic' : 'cover', 'shop'), h('div.grow', {},
   h('div.row.between', {}, h('h3', {}, s.name), openBadge(s)), s.description ? h('div.muted', {}, s.description) : null,
   h('div.metas', {}, meta('star', s.review_count ? `${Number(s.rating).toFixed(1)} (${s.review_count})` : 'ยังไม่มีรีวิว'), s.is_open ? meta('clock', eta(s.eta_minutes)) : null, h('span.price', {}, priceRange(s))),
   s.is_open ? h('div.row', {}, h('span.muted', {}, `รอ ${s.waiting} คิว`), crowdBadge(s.crowd)) : null,
-  s.matched_menus?.length ? h('div.found', {}, h('span.muted', {}, 'พบ: '), s.matched_menus.map((m) => h('span.chip.mini', {}, m.name + (m.available ? '' : ' (หมด)')))) : null));
+  s.matched_menus?.length ? h('div.found', {}, h('span.muted', {}, 'พบ: '), s.matched_menus.map((m) => h('span.chip.mini.withpic', {}, picture(m.image_url, m.name, 'pic.xs', m.art), m.name + (m.available ? '' : ' (หมด)')))) : null));
 
 async function home(alive) {
   let category = '';
@@ -375,9 +375,9 @@ async function shop(alive, id) {
   const status = h('p');
   const drawStatus = (x) => status.replaceChildren(openBadge(x), ' ', x.is_open ? `รอ ${x.waiting} คิว · ${eta(x.eta_minutes)} ` : 'ยังไม่รับออเดอร์ตอนนี้', x.is_open && x.crowd ? crowdBadge(x.crowd) : '');
   drawStatus(s);
-  const menuCard = (m) => h('button.item' + (m.available && s.is_open ? '' : '.off'), { type: 'button', disabled: !m.available, onclick: () => foodDetail(s, m) }, picture(m.image_url, m.name), h('div.grow', {}, h('h3', {}, m.name), m.description ? h('div.muted', {}, m.description) : null, h('div.row.between', {}, h('span.price', {}, baht(m.price)), m.available ? null : h('span.badge.bad', {}, 'หมด'))));
+  const menuCard = (m) => h('button.item' + (m.available && s.is_open ? '' : '.off'), { type: 'button', disabled: !m.available, onclick: () => foodDetail(s, m) }, picture(m.image_url, m.name, 'pic', m.art), h('div.grow', {}, h('h3', {}, m.name), m.description ? h('div.muted', {}, m.description) : null, h('div.row.between', {}, h('span.price', {}, baht(m.price)), m.available ? null : h('span.badge.bad', {}, 'หมด'))));
   const groups = [...data.categories, { id: null, name: 'อื่น ๆ' }].map((c) => [c, data.menus.filter((m) => m.category_id === c.id)]).filter(([, l]) => l.length);
-  const render = () => frame('home', [header(s.name, '#/'), picture(s.image_url, s.name, 'hero'), h('div.stack', { style: 'margin-top:.8rem' }, s.description ? h('p', {}, s.description) : null, h('p.muted', {}, s.food_court, s.location ? ` · ${s.location}` : ''), status,
+  const render = () => frame('home', [header(s.name, '#/'), picture(s.image_url, s.name, 'hero', 'shop'), h('div.stack', { style: 'margin-top:.8rem' }, s.description ? h('p', {}, s.description) : null, h('p.muted', {}, s.food_court, s.location ? ` · ${s.location}` : ''), status,
     h('div.row.between', {}, h('a', { href: `#/reviews/${s.id}`, style: 'display:inline-flex;min-height:44px;align-items:center' }, ratingText(s)), heart('shops', s.id)),
     groups.length ? groups.map(([c, l]) => h('section', {}, h('h2', {}, c.name), h('div.list', {}, l.map(menuCard)))) : empty('ร้านนี้ยังไม่มีเมนู'))]);
   render();
@@ -413,7 +413,7 @@ function foodDetail(s, m) {
         toast('เพิ่มลงตะกร้าแล้ว');
         if (shopView?.id === s.id && location.hash.startsWith('#/shop/')) shopView.render();
       });
-    } }, picture(m.image_url, m.name, 'hero'),
+    } }, picture(m.image_url, m.name, 'hero', m.art),
     h('div.row.between.foodhead', {}, h('div.metas', {}, meta('star', s.review_count ? Number(s.rating).toFixed(1) : 'ยังไม่มีรีวิว'), m.prep_minutes ? meta('clock', `${m.prep_minutes} นาที`) : null), heart('menus', m.id)),
     m.description ? h('p.muted', {}, m.description) : null,
     m.option_groups.map((g) => h('fieldset', {}, h('legend', {}, g.name, g.min_select > 0 ? ' (จำเป็น)' : '', g.max_select > 1 ? ` เลือกได้ ${g.max_select}` : ''), g.options.map((o) => {
@@ -478,7 +478,7 @@ async function cartPage(alive) {
     const blocked = cart.has_problems || !cart.shop.is_open;
     return frame('', [header('ตะกร้าและยืนยันออเดอร์', `#/shop/${cart.shop.id}`), h('h2', {}, cart.shop.name),
       cart.shop.is_open ? null : h('p.notice.bad', {}, 'ร้านปิดรับออเดอร์อยู่ในขณะนี้'),
-      h('div.list', {}, cart.items.map((i, n) => h('div.item.cartline', {}, picture(i.image_url, i.name || '?'), h('div.grow', {}, h('div.row.between', {}, h('h3', {}, i.name || 'เมนูที่ไม่มีแล้ว'), h('button.btn.danger.ghost.remove', { type: 'button', onclick: replaceQty(n, 0) }, 'ลบ')), i.options.length ? h('div.muted', {}, i.options.map((o) => o.name).join(', ')) : null, i.note ? h('div.muted', {}, 'หมายเหตุ: ', i.note) : null, i.problem ? h('p.notice.bad', {}, i.problem) : null,
+      h('div.list', {}, cart.items.map((i, n) => h('div.item.cartline', {}, picture(i.image_url, i.name || 'เมนูที่ไม่มีแล้ว', 'pic', i.art), h('div.grow', {}, h('div.row.between', {}, h('h3', {}, i.name || 'เมนูที่ไม่มีแล้ว'), h('button.btn.danger.ghost.remove', { type: 'button', onclick: replaceQty(n, 0) }, 'ลบ')), i.options.length ? h('div.muted', {}, i.options.map((o) => o.name).join(', ')) : null, i.note ? h('div.muted', {}, 'หมายเหตุ: ', i.note) : null, i.problem ? h('p.notice.bad', {}, i.problem) : null,
         h('div.row.between', {}, h('span.price', {}, baht(i.line_total)), h('div.stepper', {}, h('button.icon', { type: 'button', 'aria-label': `ลดจำนวน ${i.name}`, onclick: replaceQty(n, i.quantity - 1) }, '−'), h('b', {}, i.quantity), h('button.icon', { type: 'button', 'aria-label': `เพิ่มจำนวน ${i.name}`, disabled: i.quantity >= 20, onclick: replaceQty(n, i.quantity + 1) }, '+'))))))),
       h('a.btn.ghost.block', { href: `#/shop/${cart.shop.id}`, style: 'margin-top:1rem' }, 'เพิ่มเมนูอื่น'),
       h('section.checkout', {}, h('div.row.between', {}, h('span.eyebrow', {}, 'วิธีรับ'), h('b', {}, 'รับเองที่ร้าน')), paymentChoice(), h('div.total', {}, h('span.eyebrow', {}, 'ยอดรวม'), h('span.bigprice', {}, baht(cart.total))),
@@ -534,7 +534,7 @@ async function orders(alive) {
   const draw = async () => {
     const { data, meta } = await api('GET', `/orders?scope=${scope}&page=${page}`);
     if (!changed([page, data, meta])) return;
-    list.replaceChildren(...(data.length ? data.map((o) => h('a.item', { href: `#/order/${o.id}` }, h('div.grow', {}, h('div.row.between', {}, h('h3', {}, o.shop.name), badge(o.status)), h('div.muted', {}, dateTime(o.created_at), ' · ', o.order_no), h('div', {}, o.items.map((i) => `${i.quantity} × ${i.name}`).join(', ')), h('div.row.between', {}, o.queue ? h('b', {}, queueNo(o.queue.number)) : h('span'), h('span.price', {}, baht(o.total)))))) : [empty('ไม่มีออเดอร์ในส่วนนี้')]));
+    list.replaceChildren(...(data.length ? data.map((o) => h('a.item', { href: `#/order/${o.id}` }, o.items[0] ? picture(o.items[0].image_url, o.items[0].name, 'pic.sm', o.items[0].art) : null, h('div.grow', {}, h('div.row.between', {}, h('h3', {}, o.shop.name), badge(o.status)), h('div.muted', {}, dateTime(o.created_at), ' · ', o.order_no), h('div', {}, o.items.map((i) => `${i.quantity} × ${i.name}`).join(', ')), h('div.row.between', {}, o.queue ? h('b', {}, queueNo(o.queue.number)) : h('span'), h('span.price', {}, baht(o.total)))))) : [empty('ไม่มีออเดอร์ในส่วนนี้')]));
     const pages = Math.ceil(meta.total / meta.per_page);
     const turnPage = (d) => (e) => busy(e.currentTarget, async () => { page += d; await draw(); });
     more.replaceChildren(...(pages > 1 ? [h('button.btn.ghost', { type: 'button', disabled: page <= 1, onclick: turnPage(-1) }, 'ก่อนหน้า'), `${page} / ${pages}`, h('button.btn.ghost', { type: 'button', disabled: page >= pages, onclick: turnPage(1) }, 'ถัดไป')] : []));
@@ -597,7 +597,7 @@ function tracking(o, redraw) {
       ? [h('p.muted', {}, 'สแกนด้วยแอปธนาคาร ตรวจชื่อผู้รับและยอดก่อนโอน (QR นี้ไม่ใช่ QR รับอาหาร)'), qrImage(o.promptpay.payload, 'QR จ่ายเงิน PromptPay'), h('div.price', { style: 'font-size:1.5rem' }, baht(o.promptpay.amount)), h('p.notice', {}, 'รอร้านตรวจสอบยอด การสแกนยังไม่ถือว่าชำระแล้ว')]
       : h('p.notice', {}, 'ร้านปิดรับ PromptPay แล้ว กรุณาชำระที่ร้าน')) : null,
     h('section.card', {}, h('h2', {}, 'สถานะ'), h('ol.steps', {}, steps.map((s) => h('li' + (at[s] ? '.done' : ''), { 'aria-current': s === o.status ? 'step' : null }, STATUS[s][0], at[s] ? h('span.muted', {}, ' ', time(at[s])) : null)))),
-    h('section.card', {}, h('h2', {}, 'รายการ'), o.items.map((i) => h('div.row.between', {}, h('span.grow', {}, `${i.quantity} × ${i.name}`, i.options.length ? h('div.muted', {}, i.options.map((x) => x.name).join(', ')) : null, i.note ? h('div.muted', {}, 'หมายเหตุ: ', i.note) : null), baht(i.line_total))), h('div.total', {}, h('span', {}, 'ยอดรวม'), h('span', {}, baht(o.total))), h('p.muted', {}, o.payment_status === 'PAID' ? `✓ ชำระแล้ว · ${METHOD[o.payment_method]}` : closed ? '' : o.payment_method === 'PROMPTPAY' ? 'เลือกจ่ายด้วย PromptPay เมื่ออาหารพร้อม' : 'ชำระที่ร้านตอนรับอาหาร')),
+    h('section.card', {}, h('h2', {}, 'รายการ'), o.items.map((i) => h('div.row.between.line', {}, picture(i.image_url, i.name, 'pic.sm', i.art), h('span.grow', {}, `${i.quantity} × ${i.name}`, i.options.length ? h('div.muted', {}, i.options.map((x) => x.name).join(', ')) : null, i.note ? h('div.muted', {}, 'หมายเหตุ: ', i.note) : null), baht(i.line_total))), h('div.total', {}, h('span', {}, 'ยอดรวม'), h('span', {}, baht(o.total))), h('p.muted', {}, o.payment_status === 'PAID' ? `✓ ชำระแล้ว · ${METHOD[o.payment_method]}` : closed ? '' : o.payment_method === 'PROMPTPAY' ? 'เลือกจ่ายด้วย PromptPay เมื่ออาหารพร้อม' : 'ชำระที่ร้านตอนรับอาหาร')),
     o.status === 'COMPLETED' ? reviewSection(o, redraw) : null,
     o.can_cancel ? h('button.btn.danger.ghost.block', { type: 'button', onclick: async (e) => {
       const button = e.currentTarget;

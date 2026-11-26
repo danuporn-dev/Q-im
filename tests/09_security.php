@@ -100,7 +100,9 @@ T::status(500, $r, 'database failure', 'SERVER_ERROR');
 T::ok(!preg_match('/PDO|SQLSTATE|root|denied|\.php/i', $r['raw']), 'no details in the response');
 $log = file_get_contents(dirname(__DIR__) . '/storage/logs/app-' . gmdate('Y-m-d') . '.log');
 T::ok(!str_contains($log, 'definitely-wrong') && !str_contains($log, Env::get('SEED_DEMO_PASSWORD')), 'no passwords in logs');
-$limited = Servers::start(8183, ['RATE_LIMIT_MULTIPLIER' => '1']);
+// The limit counts per fixed 60 s window: the clock of this server starts 1 s into a window, so 22 requests on a
+// slow computer cannot fall into two windows and miss the 429.
+$limited = Servers::start(8183, ['RATE_LIMIT_MULTIPLIER' => '1', 'TEST_CLOCK_OFFSET' => (string) (61 - time() % 60)]);
 $x = Fixture::customer($limited, 'sec_rate');
 $codes = [];
 for ($i = 0; $i < 22; $i++) {

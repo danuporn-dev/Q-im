@@ -120,7 +120,8 @@ T::group('T34 CSRF and rate limit');
 $noToken = clone $m;
 $noToken->csrf = '';
 T::status(403, $send($noToken, $s['shop'], $jpeg), 'upload without CSRF token', 'CSRF_FAILED');
-$limited = Servers::start(8341, ['RATE_LIMIT_MULTIPLIER' => '1']);
+// Fixed one-hour window: start 1 s into one, so the 61 uploads cannot fall into two windows.
+$limited = Servers::start(8341, ['RATE_LIMIT_MULTIPLIER' => '1', 'TEST_CLOCK_OFFSET' => (string) (3601 - time() % 3600)]);
 $slow = Fixture::login($limited, 'merchant', $s['login']);
 $codes = [];
 for ($i = 0; $i < 61; $i++) {

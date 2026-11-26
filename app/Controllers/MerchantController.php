@@ -61,7 +61,7 @@ final class MerchantController
     public static function reports(Request $q, int $shopId): array
     {
         self::member($q, $shopId);
-        return [Reports::summary($q->query('from'), $q->query('to'), $shopId), 200];
+        return [Reports::shop($shopId, $q->query('from'), $q->query('to')), 200];
     }
 
     public static function bell(Request $q, int $shopId): array

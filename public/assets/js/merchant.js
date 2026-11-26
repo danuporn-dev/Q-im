@@ -453,13 +453,26 @@ async function settings(main) {
 
 // ---- Reports ----------------------------------------------------------------
 
+/** One bar per hour that had orders; the number is written out, the bar only illustrates it. */
+function hourBars(hours) {
+  const used = hours.filter((x) => x.orders > 0);
+  if (!used.length) return empty('ไม่มีออเดอร์ในช่วงนี้');
+  const max = Math.max(...used.map((x) => x.orders));
+  const label = (n) => `${String(n).padStart(2, '0')}:00`;
+  return h('div.card.bars', {}, hours.slice(used[0].hour, used[used.length - 1].hour + 1).map((x) => h('div.bar', {}, h('span', {}, label(x.hour)), h('span.track', { 'aria-hidden': 'true' }, h('i', { style: `width:${Math.round((x.orders / max) * 100)}%` })), h('b', {}, x.orders))));
+}
+
 async function reports(main, from = today(), to = today()) {
   const r = await get(`/merchant/shops/${shopId}/reports?from=${from}&to=${to}`);
   const a = h('input', { type: 'date', value: from, max: today() });
   const b = h('input', { type: 'date', value: to, max: today() });
   const stat = (label, value) => h('div.card.stat', {}, h('span.muted', {}, label), h('b', {}, value));
   main.replaceChildren(h('h1', {}, 'รายงานร้าน'), h('form.filters', { onsubmit: (e) => { e.preventDefault(); busy(null, () => reports(main, a.value, b.value)); } }, field('ตั้งแต่', a), field('ถึง', b), h('button.btn', { type: 'submit' }, 'ดูรายงาน')),
-    h('div.stats', {}, stat('ยอดขายที่ชำระแล้ว', baht(r.sales)), stat('สำเร็จ', r.completed), stat('ปฏิเสธ', r.rejected), stat('ยกเลิก', r.cancelled), stat('เวลาทำเฉลี่ย', r.avg_prep_minutes === null ? '–' : `${r.avg_prep_minutes} นาที`)),
+    h('h2', {}, 'ยอดขายที่ชำระแล้ว'),
+    h('div.stats', {}, [['today', 'วันนี้'], ['last7', '7 วันล่าสุด'], ['last30', '30 วันล่าสุด']].map(([k, label]) => stat(`${label} · ${r.periods[k].paid_orders} ออเดอร์`, baht(r.periods[k].sales)))),
+    h('h2', {}, 'ช่วงวันที่เลือก'),
+    h('div.stats', {}, stat('ยอดขายที่ชำระแล้ว', baht(r.sales)), stat('สำเร็จ', r.completed), stat('ปฏิเสธ', r.rejected), stat('ยกเลิก', r.cancelled), stat('เวลาทำเฉลี่ย', r.avg_prep_minutes === null ? '–' : `${r.avg_prep_minutes} นาที`), stat(`คะแนนเฉลี่ย (ทุกช่วงเวลา) · ${r.review_count} รีวิว`, r.review_count ? `★ ${Number(r.rating).toFixed(1)}` : '–')),
+    h('h2', {}, 'ออเดอร์ตามชั่วโมง'), hourBars(r.by_hour),
     h('h2', {}, 'เมนูขายดี'), r.top_menus.length ? h('div.tablewrap', {}, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'เมนู'), h('th.num', {}, 'จำนวน'))), h('tbody', {}, r.top_menus.map((m) => h('tr', {}, h('td', {}, m.name), h('td.num', {}, m.quantity)))))) : empty('ไม่มียอดขายในช่วงนี้'));
 }
 

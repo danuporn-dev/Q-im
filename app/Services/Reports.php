@@ -38,6 +38,33 @@ final class Reports
         ];
     }
 
+    /**
+     * A shop's report: the summary of the chosen dates, plus paid sales for today and the last 7 and 30 days
+     * (both including today), orders placed per Bangkok hour in the chosen dates, and the review average.
+     */
+    public static function shop(int $shopId, string $from, string $to): array
+    {
+        $report = self::summary($from, $to, $shopId);
+        $today = Clock::bangkok();
+        $periods = [];
+        foreach (['today' => 0, 'last7' => 6, 'last30' => 29] as $name => $back) {
+            $row = Database::row(
+                "SELECT COALESCE(SUM(p.amount), 0.00) AS sales, COUNT(*) AS paid_orders FROM payments p JOIN orders o ON o.id = p.order_id
+                 WHERE p.status = 'PAID' AND p.paid_at >= ? AND p.paid_at < ? AND o.shop_id = ?",
+                [...Clock::utcRange($today->modify("-$back day")->format('Y-m-d'), $today->format('Y-m-d')), $shopId]
+            );
+            $periods[$name] = ['sales' => $row['sales'], 'paid_orders' => (int) $row['paid_orders']];
+        }
+        $hours = array_fill(0, 24, 0);
+        foreach (Database::rows('SELECT HOUR(created_at + INTERVAL 7 HOUR) AS h, COUNT(*) AS n FROM orders WHERE created_at >= ? AND created_at < ? AND shop_id = ? GROUP BY h', [...Clock::utcRange($report['from'], $report['to']), $shopId]) as $row) {
+            $hours[(int) $row['h']] = (int) $row['n'];
+        }
+        return $report + [
+            'periods' => $periods,
+            'by_hour' => array_map(static fn (int $h): array => ['hour' => $h, 'orders' => $hours[$h]], array_keys($hours)),
+        ] + Reviews::summaries([$shopId])[$shopId];
+    }
+
     /** Sales per shop and per day for the admin overview. */
     public static function breakdown(string $from, string $to): array
     {

@@ -129,33 +129,62 @@ function card(o, refresh, readyAlert) {
 }
 
 /**
- * Hand-over in one step: scan the customer's QR, which also confirms the money (payment_received).
- * Camera first; a photo, a USB scanner or typing the full order number when there is no camera.
+ * Hand-over: scan the customer's QR (or type the full order number), then, if the order is not paid yet,
+ * the shop confirms the money with its own tap. Nothing marks an order paid without that tap (D32).
+ * Camera first; a photo, a USB scanner or typing when there is no camera.
  */
 async function pickup(o, refresh, button) {
   let stopCamera = () => {};
   let sending = false;
-  let finished = false;
+  let verified = null; // a body that passed the QR or reason check and now waits for the money
   let wrong = '';
   const paid = o.payment_status === 'PAID';
   const done = await dialog(`ส่งมอบ ${o.queue ? queueNo(o.queue.number) : ''}`, (close) => {
+    const scanArea = h('div');
+    const payArea = h('div', { hidden: true });
+    const reasonBox = h('details', {});
     const send = async (body, control) => {
       if (sending) return;
       sending = true;
       try {
         await busy(control, async () => {
-          await post(`/merchant/orders/${o.id}/complete`, { ...body, payment_received: true });
-          finished = true;
-          close(true);
+          try {
+            await post(`/merchant/orders/${o.id}/complete`, body);
+            close(true);
+          } catch (e) {
+            if (e.code === 'PAYMENT_REQUIRED') return askMoney(body);
+            if (e.code === 'PICKUP_QR_LOCKED') lockScan(e.message);
+            throw e;
+          }
+          return undefined;
         });
       } finally {
         sending = false;
       }
     };
+    const askMoney = (body) => {
+      verified = body;
+      stopCamera();
+      scanArea.hidden = true;
+      const confirm = h('button.btn.block', { type: 'button', onclick: (e) => send({ ...verified, payment_received: true }, e.currentTarget) }, `ได้รับเงินแล้ว ${baht(o.total)}`);
+      payArea.replaceChildren(
+        h('p.notice', {}, body.pickup_qr ? '✓ QR ถูกต้อง' : 'ส่งมอบโดยไม่สแกน QR (บันทึกเหตุผลแล้วเมื่อยืนยัน)'),
+        h('p', {}, 'เก็บเงินจากลูกค้า ', h('b.price', {}, baht(o.total)), ' แล้วกดยืนยัน'),
+        confirm,
+        h('p.muted', {}, 'ยังไม่ได้รับเงิน: ปิดหน้าต่างนี้ ออเดอร์ยังพร้อมรับเหมือนเดิม'),
+      );
+      payArea.hidden = false;
+      confirm.focus();
+    };
+    const lockScan = (message) => {
+      stopCamera();
+      scanArea.replaceChildren(h('p.notice.bad', { role: 'alert' }, message));
+      reasonBox.open = true;
+    };
     const scanned = async (text) => {
-      if (text === wrong) return; // the same wrong code stays in front of the camera
+      if (verified || text === wrong) return; // the same wrong code stays in front of the camera
       await send({ pickup_qr: text.trim() }, null);
-      if (!finished) wrong = text;
+      if (!verified) wrong = text;
     };
     const note = h('p.muted', { role: 'status' }, 'กำลังเปิดกล้อง…');
     const video = h('video.scan', { playsinline: true, muted: true, 'aria-label': 'ภาพจากกล้อง' });
@@ -171,16 +200,22 @@ async function pickup(o, refresh, button) {
     const typedButton = h('button.btn.ghost', { type: 'submit' }, 'ตรวจ');
     const reason = h('input', { maxlength: 300 });
     const reasonButton = h('button.btn.ghost', { type: 'submit' }, 'ส่งมอบโดยไม่สแกน');
-    camera(video, scanned).then((stop) => { stopCamera = stop; note.textContent = 'หันกล้องไปที่ QR บนมือถือลูกค้า'; })
-      .catch((e) => { video.hidden = true; note.textContent = e.message; typed.focus(); });
-    return [
-      h('p.notice', {}, paid ? '✓ ชำระแล้ว สแกน QR เพื่อส่งมอบ' : h('span', {}, 'เก็บเงิน ', h('b', {}, baht(o.total)), ' สแกนสำเร็จ = รับเงินและส่งมอบแล้ว')),
+    camera(video, scanned).then((stop) => {
+      stopCamera = stop;
+      if (verified || scanArea.hidden) stop();
+      else note.textContent = 'หันกล้องไปที่ QR บนมือถือลูกค้า';
+    }).catch((e) => { video.hidden = true; note.textContent = e.message; typed.focus(); });
+    scanArea.append(
       video, note,
       field('ไม่มีกล้อง: ถ่ายรูป QR', photo),
       h('form', { onsubmit: (e) => { e.preventDefault(); if (typed.value.trim()) send({ pickup_qr: typed.value.trim() }, typedButton); } },
         field('เครื่องสแกน หรือพิมพ์เลขออเดอร์เต็มจากหน้าจอลูกค้า', h('div.row', {}, h('div.grow', {}, typed), typedButton))),
-      h('details', {}, h('summary', {}, 'ลูกค้าแสดง QR ไม่ได้'), h('form', { onsubmit: (e) => { e.preventDefault(); send({ override_reason: reason.value.trim() }, reasonButton); } },
-        field('เหตุผลและวิธีที่ตรวจสอบ', reason, 'ระบบบันทึกไว้ให้ผู้ดูแลตรวจสอบ'), h('div.row.end', {}, reasonButton))),
+    );
+    reasonBox.append(h('summary', {}, 'ลูกค้าแสดง QR ไม่ได้'), h('form', { onsubmit: (e) => { e.preventDefault(); send({ override_reason: reason.value.trim() }, reasonButton); } },
+      field('เหตุผลและวิธีที่ตรวจสอบ', reason, 'ระบบบันทึกไว้ให้ผู้ดูแลตรวจสอบ'), h('div.row.end', {}, reasonButton)));
+    return [
+      h('p.notice', {}, paid ? '✓ ชำระแล้ว สแกน QR เพื่อส่งมอบ' : h('span', {}, 'ยอด ', h('b', {}, baht(o.total)), ' สแกน QR ก่อน แล้วยืนยันรับเงิน')),
+      scanArea, payArea, h('div', {}, reasonBox),
     ];
   });
   stopCamera();

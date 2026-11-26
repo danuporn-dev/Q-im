@@ -25,7 +25,7 @@ final class Reports
         foreach (Database::rows("SELECT l.to_status, COUNT(*) AS n FROM order_status_logs l JOIN orders o ON o.id = l.order_id WHERE l.created_at >= ? AND l.created_at < ?$shop GROUP BY l.to_status", $range) as $row) {
             $counts[$row['to_status']] = (int) $row['n'];
         }
-        $seconds = Database::value("SELECT AVG(TIMESTAMPDIFF(SECOND, o.preparing_at, o.ready_at)) FROM orders o WHERE o.preparing_at IS NOT NULL AND o.ready_at >= ? AND o.ready_at < ?$shop", $range);
+        $seconds = Database::value("SELECT AVG(TIMESTAMPDIFF(SECOND, o.cooking_started_at, o.ready_at)) FROM orders o WHERE o.cooking_started_at IS NOT NULL AND o.ready_at >= ? AND o.ready_at < ?$shop", $range);
         return [
             'from' => $from, 'to' => $to, 'sales' => $sales['sales'], 'paid_orders' => (int) $sales['paid'],
             'placed' => $counts['PENDING'], 'completed' => $counts['COMPLETED'], 'rejected' => $counts['REJECTED'], 'cancelled' => $counts['CANCELLED'],

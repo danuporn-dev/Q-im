@@ -40,6 +40,9 @@ try {
     T::ok($b->sees('ยืนยันออเดอร์ ฿45'), 'cart page with total');
     $b->js("{const q=[...document.querySelectorAll('button')].find(e=>e.innerText.startsWith('ยืนยันออเดอร์'));q.click();q.click();q.click();}");
     T::ok($b->sees('QR รับอาหาร') && $b->until("document.querySelector('.qr img')?.naturalWidth > 0"), 'tracking page after checkout');
+    // The QR drawn by qrcode.js must read back as the same text with jsQR, the shop's reader.
+    $decoded = $b->js("new Promise((ok,no)=>{const s=document.createElement('script');s.src='../assets/js/vendor/jsQR.min.js';s.onerror=no;s.onload=()=>{const i=document.querySelector('.qr img'),c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight;const x=c.getContext('2d');x.drawImage(i,0,0);const d=x.getImageData(0,0,c.width,c.height);ok(jsQR(d.data,d.width,d.height)?.data??null);};document.head.append(s);})");
+    T::eq(Database::value('SELECT public_order_no FROM orders WHERE shop_id = ?', [$s['shop']]), $decoded, 'QR decodes back to the order number with jsQR');
     T::eq(1, (int) Database::value('SELECT COUNT(*) FROM orders WHERE shop_id = ?', [$s['shop']]), 'triple click makes one order');
     $order = (int) Database::value('SELECT id FROM orders WHERE shop_id = ?', [$s['shop']]);
     $b->send('Page.reload');
@@ -115,14 +118,32 @@ try {
     $qr = $cq->get("/api/v1/orders/$handover")['body']['data']['order_no'];
     T::ok(!$b->sees('รับเงิน ฿', 1) && !$b->sees('เริ่มทำ', 0.5), 'no separate payment or start buttons');
     $b->click('ส่งมอบ');
-    T::ok($b->sees('สแกนสำเร็จ = รับเงินและส่งมอบแล้ว') && $b->sees('ถ่ายรูป QR'), 'dialog shows the money to collect and the fallbacks');
+    T::ok($b->sees('สแกน QR ก่อน แล้วยืนยันรับเงิน') && $b->sees('ถ่ายรูป QR'), 'dialog shows the amount and the fallbacks');
     $b->fill('dialog input[name=pickup_qr]', substr($qr, 0, -1) . 'Z');
     $b->click('ตรวจ', $dialog);
     T::ok($b->sees('QR ไม่ตรงกับออเดอร์นี้'), 'wrong number is refused');
     $b->fill('dialog input[name=pickup_qr]', $qr);
     $b->click('ตรวจ', $dialog);
-    T::ok($b->sees('ส่งมอบเรียบร้อย') && $b->until('!document.querySelector("dialog")'), 'right number completes the hand-over');
-    T::eq(['COMPLETED', 'PAID'], [Database::value('SELECT status FROM orders WHERE id = ?', [$handover]), Database::value('SELECT status FROM payments WHERE order_id = ?', [$handover])], 'completed and paid in one step');
+    T::ok($b->sees('✓ QR ถูกต้อง') && $b->sees('ได้รับเงินแล้ว ฿45'), 'T16: right number asks the shop to confirm the money');
+    T::eq(['READY', 'UNPAID'], [Database::value('SELECT status FROM orders WHERE id = ?', [$handover]), Database::value('SELECT status FROM payments WHERE order_id = ?', [$handover])], 'T16: not completed or paid before that tap');
+    $b->click('ได้รับเงินแล้ว', $dialog);
+    T::ok($b->sees('ส่งมอบเรียบร้อย') && $b->until('!document.querySelector("dialog")'), 'the tap completes the hand-over');
+    T::eq(['COMPLETED', 'PAID'], [Database::value('SELECT status FROM orders WHERE id = ?', [$handover]), Database::value('SELECT status FROM payments WHERE order_id = ?', [$handover])], 'completed and paid');
+    [, $locked] = Fixture::order($base, 'ui_lock', $s);
+    foreach (['accept', 'ready'] as $x) {
+        $m->post("/api/v1/merchant/orders/$locked/$x");
+    }
+    Database::run('UPDATE orders SET pickup_failures = 5 WHERE id = ?', [$locked]);
+    $b->until("[...document.querySelectorAll('.ocard')].length >= 1");
+    $b->click('ส่งมอบ');
+    $b->fill('dialog input[name=pickup_qr]', 'X');
+    $b->click('ตรวจ', $dialog);
+    T::ok($b->sees('สแกนผิดครบ 5 ครั้ง') && $b->until("document.querySelector('dialog details').open"), 'locked scanning opens the hand-over with a reason');
+    $b->fill('dialog details input', 'ตรวจบัตรนักศึกษาแล้ว');
+    $b->click('ส่งมอบโดยไม่สแกน', $dialog);
+    $b->click('ได้รับเงินแล้ว', $dialog);
+    T::ok($b->sees('ส่งมอบเรียบร้อย'), 'hand-over with a reason, then the money');
+    T::eq(['COMPLETED', 1], [Database::value('SELECT status FROM orders WHERE id = ?', [$locked]), (int) Database::value("SELECT COUNT(*) FROM audit_logs WHERE action = 'pickup.override' AND entity_id = ?", [$locked])], 'audited override');
     foreach ([390, 768, 1280, 1920] as $width) {
         $b->size($width);
         $bad = [];

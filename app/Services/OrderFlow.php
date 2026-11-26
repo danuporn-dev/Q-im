@@ -30,6 +30,10 @@ final class OrderFlow
     private const VIA = ['PENDING>PREPARING' => ['ACCEPTED'], 'ACCEPTED>READY' => ['PREPARING']];
     /** Audit action of a hand-over without scanning the customer's QR. */
     public const PICKUP_OVERRIDE = 'pickup.override';
+    /** Wrong QR codes or typed order numbers per order before scanning is locked (D32). */
+    public const PICKUP_ATTEMPTS = 5;
+    /** Already done for these actions: a repeated tap answers 200 and changes nothing. */
+    private const DONE = ['accept' => ['ACCEPTED', 'PREPARING']];
     private const STAMP = ['ACCEPTED' => 'accepted_at', 'PREPARING' => 'preparing_at', 'READY' => 'ready_at', 'COMPLETED' => 'completed_at'];
 
     /** Minutes an order may stay READY before the shop is alerted and may close it as a no-show. */
@@ -65,9 +69,10 @@ final class OrderFlow
     public static function byMerchant(int $userId, int $orderId, string $action, array $in): void
     {
         [$from, $to, $needsReason, $event] = self::ACTIONS[$action];
-        Database::tx(static function () use ($userId, $orderId, $in, $from, $to, $needsReason, $event): void {
+        $done = self::DONE[$action] ?? [$to];
+        Database::tx(static function () use ($userId, $orderId, $in, $from, $to, $needsReason, $event, $done): void {
             $order = self::lockForMember($userId, $orderId);
-            if ($order['status'] === $to) {
+            if (in_array($order['status'], $done, true)) {
                 return; // repeated click: same result, no side effects
             }
             if (!in_array($order['status'], $from, true)) {
@@ -88,7 +93,33 @@ final class OrderFlow
             if ($event !== null) {
                 Notifications::enqueue($orderId, (int) $order['user_id'], $event);
             }
+            self::fillKitchen((int) $order['shop_id']);
         });
+    }
+
+    /**
+     * Gives free kitchen slots (shops.capacity) to the oldest waiting orders, in queue order, by setting
+     * cooking_started_at. Called whenever an order enters or leaves the kitchen, and when capacity changes.
+     * The shop row lock keeps two transactions from filling the same slot.
+     */
+    public static function fillKitchen(int $shopId): void
+    {
+        $capacity = Database::value('SELECT capacity FROM shops WHERE id = ? FOR UPDATE', [$shopId]);
+        $jobs = Database::rows(
+            "SELECT o.id, o.cooking_started_at FROM orders o JOIN queues q ON q.order_id = o.id
+             WHERE o.shop_id = ? AND o.status IN ('ACCEPTED','PREPARING') ORDER BY q.business_date, q.queue_number",
+            [$shopId]
+        );
+        $free = $capacity === null ? count($jobs) : (int) $capacity - count(array_filter(array_column($jobs, 'cooking_started_at')));
+        foreach ($jobs as $job) {
+            if ($free <= 0) {
+                break;
+            }
+            if ($job['cooking_started_at'] === null) {
+                Database::run('UPDATE orders SET cooking_started_at = ? WHERE id = ?', [Clock::now(), $job['id']]);
+                $free--;
+            }
+        }
     }
 
     public static function confirmPayment(int $userId, int $orderId): void
@@ -112,26 +143,35 @@ final class OrderFlow
      */
     public static function complete(int $userId, int $orderId, array $in): void
     {
-        Database::tx(static function () use ($userId, $orderId, $in): void {
+        // A wrong code is counted and audited, so that transaction must commit before the error is returned.
+        $wrong = Database::tx(static function () use ($userId, $orderId, $in): ?HttpError {
             $order = self::lockForMember($userId, $orderId);
             if ($order['status'] === 'COMPLETED') {
-                return;
+                return null;
             }
             if ($order['status'] !== 'READY') {
                 throw HttpError::conflict('INVALID_STATE', 'ส่งมอบได้เมื่ออาหารพร้อมรับ', ['status' => $order['status']]);
             }
-            $payment = Database::row('SELECT id, status FROM payments WHERE order_id = ? FOR UPDATE', [$orderId]);
-            if ($payment['status'] !== 'PAID' && ($in['payment_received'] ?? false) !== true) {
-                throw HttpError::conflict('PAYMENT_REQUIRED', 'ต้องยืนยันการชำระเงินก่อนส่งมอบ');
-            }
             $scan = Input::optionalText($in, 'pickup_qr', 'QR รับอาหาร', 32);
             $reason = null;
             if ($scan !== null) {
+                $failures = (int) $order['pickup_failures'];
+                if ($failures >= self::PICKUP_ATTEMPTS) {
+                    throw self::scanLocked();
+                }
                 if (!hash_equals($order['public_order_no'], strtoupper($scan))) {
-                    throw new HttpError(422, 'PICKUP_QR_WRONG', 'QR ไม่ตรงกับออเดอร์นี้');
+                    Database::run('UPDATE orders SET pickup_failures = pickup_failures + 1 WHERE id = ?', [$orderId]);
+                    Audit::log($userId, 'pickup.qr_wrong', 'order', $orderId, ['shop_id' => (int) $order['shop_id'], 'attempt' => $failures + 1]);
+                    $left = self::PICKUP_ATTEMPTS - $failures - 1;
+                    return $left > 0 ? new HttpError(422, 'PICKUP_QR_WRONG', "QR ไม่ตรงกับออเดอร์นี้ (ลองได้อีก $left ครั้ง)") : self::scanLocked();
                 }
             } else {
                 $reason = 'รับโดยไม่สแกน QR: ' . Input::text($in, 'override_reason', 'QR รับอาหารหรือเหตุผล', 300, 3);
+            }
+            // Checked after the QR, so the shop learns that the code is right and then confirms the money itself.
+            $payment = Database::row('SELECT id, status FROM payments WHERE order_id = ? FOR UPDATE', [$orderId]);
+            if ($payment['status'] !== 'PAID' && ($in['payment_received'] ?? false) !== true) {
+                throw HttpError::conflict('PAYMENT_REQUIRED', 'ต้องยืนยันการชำระเงินก่อนส่งมอบ', ['total' => $order['total']]);
             }
             if ($payment['status'] !== 'PAID') {
                 self::markPaid($userId, $order, (int) $payment['id']);
@@ -140,7 +180,16 @@ final class OrderFlow
                 Audit::log($userId, self::PICKUP_OVERRIDE, 'order', $orderId, ['shop_id' => (int) $order['shop_id'], 'reason' => $reason]);
             }
             self::move($order, 'COMPLETED', $userId, $reason);
+            return null;
         });
+        if ($wrong !== null) {
+            throw $wrong;
+        }
+    }
+
+    private static function scanLocked(): HttpError
+    {
+        return HttpError::conflict('PICKUP_QR_LOCKED', 'สแกนผิดครบ ' . self::PICKUP_ATTEMPTS . ' ครั้ง ออเดอร์นี้ต้องส่งมอบโดยระบุเหตุผล');
     }
 
     /** The caller holds the order and payment row locks. */
@@ -163,7 +212,7 @@ final class OrderFlow
 
     private static function lock(int $orderId): ?array
     {
-        return Database::row('SELECT id, public_order_no, user_id, shop_id, status, total, ready_at FROM orders WHERE id = ? FOR UPDATE', [$orderId]);
+        return Database::row('SELECT id, public_order_no, user_id, shop_id, status, total, ready_at, pickup_failures FROM orders WHERE id = ? FOR UPDATE', [$orderId]);
     }
 
     private static function lockForMember(int $userId, int $orderId): array

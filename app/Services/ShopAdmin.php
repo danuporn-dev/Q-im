@@ -64,6 +64,9 @@ final class ShopAdmin
                     Database::insert('shop_hours', ['shop_id' => $shopId] + $h);
                 }
             }
+            if (array_key_exists('capacity', $shop)) {
+                OrderFlow::fillKitchen($shopId);
+            }
             Audit::log($userId, 'shop.settings', 'shop', $shopId, ['fields' => array_merge(array_keys($shop + $settings), $hours === null ? [] : ['hours'])]);
         });
         return self::settings($shopId);

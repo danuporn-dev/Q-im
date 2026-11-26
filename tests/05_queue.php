@@ -84,10 +84,10 @@ T::eq([2, 11], [$shopView['waiting'], $shopView['eta_minutes']], 'shop summary')
 Database::update('shops', $s['shop'], ['capacity' => null]);
 T::eq(null, $c3->get("$a/orders/$o3")['body']['data']['eta_minutes'], 'no capacity means no estimate');
 Database::update('shops', $s['shop'], ['capacity' => 2]);
-Database::run("UPDATE orders SET status = 'PREPARING', preparing_at = ? WHERE id = ?", [gmdate('Y-m-d H:i:s', time() - 7200), $o]);
+Database::run("UPDATE orders SET status = 'PREPARING', preparing_at = ?, cooking_started_at = ? WHERE id = ?", [gmdate('Y-m-d H:i:s', time() - 7200), gmdate('Y-m-d H:i:s', time() - 7200), $o]);
 T::eq(1, $c->get("$a/orders/$o")['body']['data']['eta_minutes'], 'overdue ETA is never negative');
 // Back to an order accepted before D31, which still waits in ACCEPTED.
-Database::run("UPDATE orders SET status = 'ACCEPTED', preparing_at = NULL WHERE id = ?", [$o]);
+Database::run("UPDATE orders SET status = 'ACCEPTED', preparing_at = NULL, cooking_started_at = NULL WHERE id = ?", [$o]);
 
 T::group('T07 concurrent accepts: 24 orders, 48 requests (2 per order) on 8 server processes');
 $ports = [];

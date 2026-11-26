@@ -12,7 +12,7 @@ let turn = 0;
 
 let unread = 0;
 const bellText = () => (unread ? `แจ้งเตือน ${unread > 99 ? '99+' : unread}` : 'แจ้งเตือน');
-const bell = () => h('a.btn.ghost.bell' + (unread ? '.has' : ''), { href: '#/notifications', 'data-bell': true }, h('span', { 'aria-hidden': 'true' }, '🔔 '), h('span', {}, bellText()));
+const bell = () => h('a.btn.ghost.bell' + (unread ? '.has' : ''), { href: '#/notifications', 'data-bell': true }, icon('bell'), h('span', {}, bellText()));
 function setUnread(n) {
   unread = n;
   for (const el of document.querySelectorAll('[data-bell]')) {
@@ -136,6 +136,10 @@ const ICONS = {
   search: 'M10.5 4a6.5 6.5 0 1 0 4 11.6L20 21l1-1-5.4-5.5A6.5 6.5 0 0 0 10.500 4m0 2a4.500 4.500 0 1 1 0 9 4.500 4.500 0 0 1 0-9',
   orders: 'M6 3h12v18l-3-2-3 2-3-2-3 2zm3 5h6v2H9zm0 4h6v2H9z',
   profile: 'M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8m-8 16c0-4 4-6 8-6s8 2 8 6z',
+  bag: 'M7 7V6a5 5 0 0 1 10 0v1h3l-1.2 14H5.2L4 7zm2 0h6V6a3 3 0 0 0-6 0z',
+  bell: 'M12 3a6 6 0 0 0-6 6v4l-2 3v1h16v-1l-2-3V9a6 6 0 0 0-6-6m-2 16a2 2 0 0 0 4 0z',
+  clock: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m0 2a8 8 0 1 1 0 16 8 8 0 0 1 0-16m-1 3v6.4l4.8 2.9 1-1.7-3.8-2.3V7z',
+  star: 'M12 2.5l2.9 6.2 6.8.7-5.1 4.6 1.4 6.7L12 17.3l-6 3.4 1.4-6.7-5.1-4.6 6.8-.7z',
 };
 function icon(name) {
   const ns = 'http://www.w3.org/2000/svg';
@@ -188,6 +192,12 @@ async function route() {
 
 // ---- Discovery --------------------------------------------------------------
 
+const cartButton = () => h('a.icon.cartlink', { href: '#/cart', 'aria-label': `ตะกร้า ${cart?.count || 0} รายการ` }, icon('bag'), cart?.count ? h('span.count', { 'aria-hidden': 'true' }, cart.count > 99 ? '99+' : cart.count) : null);
+const longDate = () => new Date().toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'long', year: 'numeric' });
+/** Crowd level as three labelled steps with a marker; the level is also written out. */
+const crowdMeter = (level) => h('div.meter', { role: 'img', 'aria-label': CROWD[level] ? `ความหนาแน่น${CROWD[level][0]}` : 'ยังประเมินความหนาแน่นไม่ได้' },
+  ['LOW', 'MEDIUM', 'HIGH'].map((k) => h('span.seg.' + k.toLowerCase() + (k === level ? '.on' : ''), { 'aria-hidden': 'true' }, CROWD[k][0])));
+const meta = (name, text) => h('span.meta', {}, icon(name), h('span', {}, text));
 const priceRange = (s) => (s.min_price === null ? '' : s.min_price === s.max_price ? baht(s.min_price) : `${baht(s.min_price)} – ${baht(s.max_price)}`);
 const openBadge = (s) => h('span.badge.' + (s.is_open ? 'open' : 'bad'), {}, s.is_open ? 'เปิด' : 'ปิด');
 // Text and a shape, so the level does not depend on colour alone.
@@ -279,24 +289,30 @@ function reviewSection(o, redraw) {
   } }, h('label.field', {}, h('span', {}, 'คะแนน'), rating), h('label.field', {}, h('span', {}, 'ความคิดเห็น (ไม่บังคับ ไม่เกิน 500 ตัวอักษร)'), comment), h('p.muted', {}, 'รีวิวแสดงโดยไม่ระบุชื่อ ส่งแล้วแก้ไขไม่ได้ อย่าใส่ข้อมูลส่วนตัว'), button));
 }
 
-const shopCard = (s) => h('a.item' + (s.is_open ? '' : '.off'), { href: `#/shop/${s.id}` }, picture(s.image_url, s.name), h('div.grow', {},
+/** A stall: large picture on the home page, compact row in search results. */
+const shopCard = (s) => h('a.item.stall' + (s.matched_menus ? '.compact' : '') + (s.is_open ? '' : '.off'), { href: `#/shop/${s.id}` }, picture(s.image_url, s.name, s.matched_menus ? 'pic' : 'cover'), h('div.grow', {},
   h('div.row.between', {}, h('h3', {}, s.name), openBadge(s)), s.description ? h('div.muted', {}, s.description) : null,
-  h('div', {}, priceRange(s)), s.review_count ? h('div.muted', {}, ratingText(s)) : null, s.is_open ? h('div.muted', {}, `รอ ${s.waiting} คิว · ${eta(s.eta_minutes)}`) : null, s.is_open ? h('div', {}, crowdBadge(s.crowd)) : null,
-  s.matched_menus?.length ? h('div.muted', {}, 'พบ: ', s.matched_menus.map((m) => m.name + (m.available ? '' : ' (หมด)')).join(', ')) : null));
+  h('div.metas', {}, meta('star', s.review_count ? `${Number(s.rating).toFixed(1)} (${s.review_count})` : 'ยังไม่มีรีวิว'), s.is_open ? meta('clock', eta(s.eta_minutes)) : null, h('span.price', {}, priceRange(s))),
+  s.is_open ? h('div.row', {}, h('span.muted', {}, `รอ ${s.waiting} คิว`), crowdBadge(s.crowd)) : null,
+  s.matched_menus?.length ? h('div.found', {}, h('span.muted', {}, 'พบ: '), s.matched_menus.map((m) => h('span.chip.mini', {}, m.name + (m.available ? '' : ' (หมด)')))) : null));
 
 async function home(alive) {
   let category = '';
   const list = h('div.list');
   const changed = changes();
-  const courtBox = h('div.stack');
+  const courtBox = h('label.pick');
+  const crowdCard = h('section.crowdcard', { 'aria-live': 'polite' });
   const courtsChanged = changes();
   const drawCourts = (courts) => {
     if (courts.length && court.get() && !courts.some((c) => c.id === court.get())) court.set(0); // closed or removed
     const chosen = courts.find((c) => c.id === court.get());
     const select = h('select', { name: 'food_court', onchange: (e) => busy(e.currentTarget, async () => { court.set(Number(e.target.value)); courtsChanged(null); await draw(); }) },
       h('option', { value: 0 }, 'ทุกโรงอาหาร'), courts.map((c) => h('option', { value: c.id, selected: c.id === court.get() }, `${c.name}${CROWD[c.crowd] ? ` · ${CROWD[c.crowd][2]} ${CROWD[c.crowd][0]}` : ''}`)));
-    courtBox.replaceChildren(h('label.field', {}, h('span', {}, 'โรงอาหาร'), select),
-      chosen ? h('p', {}, crowdBadge(chosen.crowd), ' ', h('span.muted', {}, `เปิด ${chosen.open_shops} จาก ${chosen.shops} ร้าน`, chosen.location ? ` · ${chosen.location}` : '')) : '');
+    courtBox.replaceChildren(h('span.eyebrow', {}, 'รับอาหารที่'), select);
+    crowdCard.replaceChildren(h('div.row.between', {}, h('span.muted', {}, longDate()), chosen ? h('span.muted', {}, `เปิด ${chosen.open_shops} จาก ${chosen.shops} ร้าน`) : null),
+      h('h2', {}, 'ความหนาแน่น', chosen ? ` · ${chosen.name}` : ''),
+      chosen ? [crowdMeter(chosen.crowd), h('p', {}, crowdBadge(chosen.crowd) || h('span.muted', {}, 'ยังประเมินไม่ได้'), chosen.location ? h('span.muted', {}, ` ${chosen.location}`) : null)]
+        : h('p.muted', {}, 'เลือกโรงอาหารด้านบนเพื่อดูความหนาแน่นรวม แต่ละร้านแสดงระดับของตัวเองด้านล่าง'));
   };
   const draw = async () => {
     const courts = await get('/food-courts');
@@ -312,10 +328,14 @@ async function home(alive) {
   const drawChips = () => chips.replaceChildren(...['', ...categories].map((c) => h('button.chip', { type: 'button', 'aria-pressed': String(c === category), onclick: (e) => busy(e.currentTarget, async () => { category = c; await draw(); drawChips(); }) }, c || 'ทั้งหมด')));
   drawChips();
   frame('home', [
-    h('header.topbar', {}, h('div.brand', {}, 'Q-im'), h('div.row', {}, me ? bell() : null, h('a.btn.ghost', { href: '#/search' }, 'ค้นหา'))),
-    h('section.banner', {}, h('strong', {}, 'สั่งก่อน ไม่ต้องยืนรอ'), 'เดินไปรับเมื่ออาหารเสร็จ'),
+    h('header.topbar.homebar', {}, courtBox, h('div.row', {}, me ? bell() : null, me ? cartButton() : null)),
+    h('p.hello', {}, me ? ['สวัสดี ', h('b', {}, me.display_name)] : h('b.brand', {}, 'Q-im')),
+    h('p.banner', {}, h('strong', {}, 'สั่งก่อน ไม่ต้องยืนรอ'), ' เดินไปรับเมื่ออาหารเสร็จ'),
+    h('a.searchbar', { href: '#/search' }, icon('search'), h('span', {}, 'ค้นหาเมนูหรือร้าน')),
     !me && config.dev_login && !config.liff_id ? demoLogin(route) : null,
-    courtBox, chips, list,
+    crowdCard,
+    h('h2.section', {}, 'หมวดหมู่'), chips,
+    h('h2.section', {}, 'ร้านในโรงอาหาร'), list,
     h('p.muted', { style: 'margin-top:1rem' }, infoLinks()),
   ]);
   stop = poll(draw, 10000);
@@ -343,7 +363,7 @@ async function search(alive) {
   input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 350); });
   open.addEventListener('change', run);
   if (!alive()) return;
-  frame('search', [header('ค้นหา'), input, h('label.check', {}, open, 'เฉพาะร้านที่เปิดอยู่'), results]);
+  frame('search', [header('ค้นหา', '#/'), h('label.searchfield', {}, icon('search'), input), h('label.check', {}, open, 'เฉพาะร้านที่เปิดอยู่'), h('h2.section', {}, 'ผลการค้นหา'), results]);
   run();
   input.focus();
 }
@@ -392,7 +412,9 @@ function foodDetail(s, m) {
         toast('เพิ่มลงตะกร้าแล้ว');
         if (shopView?.id === s.id && location.hash.startsWith('#/shop/')) shopView.render();
       });
-    } }, picture(m.image_url, m.name, 'hero'), h('p', {}, h('span.price', {}, baht(m.price)), ' ', m.description || ''), h('p', {}, heart('menus', m.id)),
+    } }, picture(m.image_url, m.name, 'hero'),
+    h('div.row.between.foodhead', {}, h('div.metas', {}, meta('star', s.review_count ? Number(s.rating).toFixed(1) : 'ยังไม่มีรีวิว'), m.prep_minutes ? meta('clock', `${m.prep_minutes} นาที`) : null), heart('menus', m.id)),
+    m.description ? h('p.muted', {}, m.description) : null,
     m.option_groups.map((g) => h('fieldset', {}, h('legend', {}, g.name, g.min_select > 0 ? ' (จำเป็น)' : '', g.max_select > 1 ? ` เลือกได้ ${g.max_select}` : ''), g.options.map((o) => {
       const single = g.max_select === 1 && g.min_select === 1;
       const input = h('input', { type: single ? 'radio' : 'checkbox', name: `g${g.id}`, checked: picked.get(g.id).has(o.id), onchange: () => {
@@ -404,8 +426,8 @@ function foodDetail(s, m) {
       } });
       return h('label.check', {}, input, h('span.grow', {}, o.name), Number(o.price_delta) ? h('span.muted', {}, '+' + baht(o.price_delta)) : null);
     }))),
-    h('label.field', {}, h('span', {}, 'หมายเหตุถึงร้าน'), note),
-    h('div.row.between', { style: 'margin-bottom:1rem' }, h('span', {}, 'จำนวน'), h('div.stepper', {}, h('button.icon', { type: 'button', 'aria-label': 'ลดจำนวน', onclick: () => step(-1) }, '−'), count, h('button.icon', { type: 'button', 'aria-label': 'เพิ่มจำนวน', onclick: () => step(1) }, '+'))), button);
+    h('label.field', {}, h('span.eyebrow', {}, 'หมายเหตุถึงร้าน'), note),
+    h('div.row.between.buyrow', {}, h('span.bigprice', {}, baht(m.price)), h('div.stepper', { role: 'group', 'aria-label': 'จำนวน' }, h('button.icon', { type: 'button', 'aria-label': 'ลดจำนวน', onclick: () => step(-1) }, '−'), count, h('button.icon', { type: 'button', 'aria-label': 'เพิ่มจำนวน', onclick: () => step(1) }, '+'))), button);
   });
 }
 

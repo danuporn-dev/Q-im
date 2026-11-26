@@ -179,6 +179,53 @@ video.scan { display: block; width: 100%; max-height: 50dvh; aspect-ratio: 4 / 3
 .item.unread { border: 2px solid var(--brand); }
 .side .bellbox { display: grid; gap: .3rem; margin-bottom: .4rem; }
 
+/* Customer: home, search, food (Figma 5001:10388, 2405, 2498, 2643) */
+.homebar { align-items: flex-end; padding-top: .6rem; }
+.pick { display: grid; gap: 0; min-width: 0; flex: 1; }
+.eyebrow { font-size: .75rem; font-weight: 700; letter-spacing: .04em; color: var(--brand-text); }
+.pick select { background: transparent; padding: 0 1.6rem 0 0; min-height: 44px; font-weight: 500; color: var(--ink-2); border: 0; max-width: 100%; }
+.cartlink { position: relative; display: grid; place-items: center; background: var(--ink); color: var(--white); text-decoration: none; }
+.cartlink:hover { background: var(--ink-2); }
+.cartlink svg, .bell svg, .meta svg, .searchbar svg, .searchfield svg { width: 18px; height: 18px; flex: none; }
+.cartlink .count { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--brand); color: var(--ink); font-size: .75rem; font-weight: 700; display: grid; place-items: center; }
+.hello { margin: .6rem 0 .1rem; font-size: 1.05rem; color: var(--ink-2); }
+.hello b { color: var(--ink); }
+.banner { background: none; padding: 0; margin: 0 0 .8rem; font-size: .9rem; color: var(--muted); border-radius: 0; }
+.banner strong { display: inline; font-size: inherit; color: var(--ink-2); }
+.searchbar, .searchfield { display: flex; align-items: center; gap: .7rem; min-height: 48px; padding: 0 1rem; border-radius: var(--r-sm); background: var(--surface); color: var(--muted); text-decoration: none; margin-bottom: 1rem; }
+.searchfield input[type=search] { background: transparent; border: 0; padding-left: 0; min-height: 46px; }
+.searchfield:focus-within { box-shadow: 0 0 0 3px rgb(255 118 34 / .25); }
+.searchfield input[type=search]:focus { border-color: transparent; box-shadow: none; }
+.crowdcard { background: var(--surface); border-radius: var(--r-lg); padding: .8rem 1rem 1rem; margin-bottom: 1.2rem; }
+.crowdcard h2 { text-align: center; font-weight: 500; margin: .2rem 0 .6rem; }
+.crowdcard p { text-align: center; margin: .6rem 0 0; }
+.meter { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; max-width: 18rem; margin: 0 auto; }
+.meter .seg { position: relative; height: 12px; font-size: 0; }
+.meter .seg:first-child { border-radius: 6px 0 0 6px; }
+.meter .seg:last-child { border-radius: 0 6px 6px 0; }
+.meter .low { background: var(--ok-fill); }
+.meter .mid { background: var(--warn-fill); }
+.meter .high { background: var(--bad-fill); }
+.meter .seg.on { outline: 2px solid var(--ink); outline-offset: 1px; z-index: 1; }
+.meter .seg.on::after { content: ""; position: absolute; left: 50%; bottom: -9px; transform: translateX(-50%); border: 6px solid transparent; border-bottom-color: var(--ink); border-top: 0; }
+h2.section { font-size: 1.15rem; font-weight: 500; margin: .4rem 0 .5rem; }
+.stall { flex-direction: column; padding: 0; overflow: hidden; gap: 0; border: 0; box-shadow: var(--shadow); }
+.stall > .grow { padding: .7rem 1rem .9rem; width: 100%; }
+.stall > .grow > * + * { margin-top: .2rem; }
+.stall .cover { width: 100%; height: 140px; object-fit: cover; border-radius: 0; flex: none; font-size: 2.6rem; }
+.stall.compact { flex-direction: row; padding: .7rem; gap: .8rem; box-shadow: var(--shadow-sm); border: 1px solid var(--line); }
+.stall.compact > .grow { padding: 0; }
+.stall.compact .pic { width: 64px; height: 64px; font-size: 1.4rem; }
+.stall.off .cover { filter: grayscale(1); opacity: .6; }
+.metas { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem 1rem; color: var(--ink-2); }
+.meta { display: inline-flex; align-items: center; gap: .3rem; }
+.meta svg { color: var(--brand); }
+.found { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+.chip.mini { min-height: 0; padding: .05rem .6rem; font-size: .85rem; border-width: 1px; }
+.foodhead { margin: .8rem 0 .3rem; }
+.bigprice { font-size: 1.6rem; font-weight: 500; color: var(--ink); }
+.buyrow { margin: .4rem 0 1rem; }
+
 /* Merchant and admin */
 .bars { display: grid; gap: .35rem; margin-bottom: 1rem; }
 .bar { display: grid; grid-template-columns: 3.5rem 1fr 3rem; gap: .6rem; align-items: center; }

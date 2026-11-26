@@ -3,8 +3,9 @@ declare(strict_types=1);
 
 // Usage: php scripts/e2e.php
 // Development only. Runs one whole order over real HTTP on the throw-away qim_test:
-// merchant sets up the menu and PromptPay, customer orders with PromptPay, accept (cooking starts), ready,
-// scan the single-use QR, confirm the money, history, report; the QR cannot be used again.
+// merchant sets up the menu and PromptPay, customer orders with PromptPay, accept (cooking starts), ready with the
+// PromptPay QR, the shop confirms the money (twice, recorded once), scans the single-use pickup QR, history, report;
+// the pickup QR cannot be used again.
 
 require dirname(__DIR__) . '/tests/lib.php';
 require dirname(__DIR__) . '/tests/fixture.php';
@@ -45,12 +46,27 @@ try {
         $view = $c->get("$a/orders/$o")['body']['data'];
         T::eq($status, $view['status'], "customer sees $status");
         T::eq(1, $view['queue']['number'], 'queue number stays');
+        if ($status === 'PREPARING') {
+            T::eq([null, null], [$view['promptpay'], $view['pickup']], 'no QR codes while cooking');
+        }
     }
     $token = $view['pickup']['qr'] ?? '';
-    T::ok(str_starts_with($token, 'QIM1.') && str_starts_with($view['promptpay']['payload'] ?? '', '000201') && $view['promptpay']['amount'] === '75.00', 'pickup token and PromptPay QR for 75.00');
+    $payload = $view['promptpay']['payload'] ?? '';
+    T::eq([true, App\Services\PromptPay::payload('0812345678', '75.00'), '75.00'], [str_starts_with($token, 'QIM1.'), $payload, $view['promptpay']['amount']], 'ready: pickup QR, and the PromptPay QR for the server total');
+    T::eq(App\Services\PromptPay::crc(substr($payload, 0, -4)), substr($payload, -4), 'PromptPay CRC is valid');
     T::status(409, $m->post("$a/merchant/orders/$o/complete", ['pickup_qr' => $token]), 'cannot complete unpaid', 'PAYMENT_REQUIRED');
-    T::status(200, $m->post("$a/merchant/orders/$o/complete", ['pickup_qr' => $token, 'payment_received' => true, 'method' => 'PROMPTPAY']), 'scan the QR, then confirm the money');
-    T::status(409, $m->post("$a/merchant/orders/$o/complete", ['pickup_qr' => $token, 'payment_received' => true]), 'the QR works once', 'PICKUP_QR_USED');
+    T::eq(null, App\Support\Database::value('SELECT used_at FROM pickup_tokens WHERE order_id = ?', [$o]), 'the refused scan did not spend the QR');
+    foreach (['first', 'second'] as $tap) {
+        T::status(200, $m->post("$a/merchant/orders/$o/payment", ['method' => 'PROMPTPAY']), "shop taps 'ได้รับเงินแล้ว' ($tap)");
+    }
+    T::eq([1, 'PAID', 'PROMPTPAY'], [
+        (int) App\Support\Database::value("SELECT COUNT(*) FROM audit_logs WHERE action = 'payment.confirm' AND entity_id = ?", [$o]),
+        App\Support\Database::value('SELECT status FROM payments WHERE order_id = ?', [$o]), App\Support\Database::value('SELECT method FROM payments WHERE order_id = ?', [$o]),
+    ], 'the payment is recorded once');
+    $view = $c->get("$a/orders/$o")['body']['data'];
+    T::eq(['PAID', null, $token], [$view['payment_status'], $view['promptpay'], $view['pickup']['qr']], 'customer: paid, no PromptPay QR, the pickup QR stays');
+    T::status(200, $m->post("$a/merchant/orders/$o/complete", ['pickup_qr' => $token]), 'shop scans the pickup QR');
+    T::status(409, $m->post("$a/merchant/orders/$o/complete", ['pickup_qr' => $token]), 'the pickup QR works once', 'PICKUP_QR_USED');
     $view = $c->get("$a/orders/$o")['body']['data'];
     T::eq(['COMPLETED', 'PAID', 'PROMPTPAY', 5], [$view['status'], $view['payment_status'], $view['payment_method'], count($view['timeline'])], 'customer history is complete');
     T::eq('75.00', $m->get("$a/merchant/shops/{$s['shop']}/reports")['body']['data']['sales'], 'report');

@@ -43,7 +43,11 @@ final class PickupTokens
             // The server key changed: replace the token, keeping its expiry.
             $nonce = bin2hex(random_bytes(16));
             $token = self::token($orderId, $nonce);
-            Database::run('UPDATE pickup_tokens SET nonce = ?, token_hash = ? WHERE order_id = ? AND token_hash = ?', [$nonce, self::hash($token), $orderId, $row['token_hash']]);
+            if (Database::run('UPDATE pickup_tokens SET nonce = ?, token_hash = ? WHERE order_id = ? AND token_hash = ?', [$nonce, self::hash($token), $orderId, $row['token_hash']]) === 0) {
+                // Another request replaced it first: show that one, not a token that was never stored.
+                $row = self::row($orderId);
+                $token = self::token($orderId, $row['nonce']);
+            }
         }
         $expired = $row['expires_at'] <= Clock::now();
         return ['qr' => $expired || $row['used_at'] !== null ? null : $token, 'expires_at' => Clock::iso($row['expires_at']), 'expired' => $expired];

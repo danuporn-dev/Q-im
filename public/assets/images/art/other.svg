@@ -2,8 +2,8 @@
   <rect width="400" height="300" fill="#f5e5db"/>
   <circle cx="200" cy="150" r="118" fill="#fbefe7"/>
   <ellipse cx="200" cy="232" rx="146" ry="22" fill="#e8cfbf"/>
-  <ellipse cx="200" cy="222" rx="146" ry="22" fill="#ffffff"/>
-  <path d="M84 214c0-70 52-116 116-116s116 46 116 116z" fill="#ff7622"/>
+  <ellipse cx="200" cy="222" rx="146" ry="22" fill="#ffffff" stroke="#4f5368" stroke-width="4" stroke-linejoin="round" class="edge"/>
+  <path d="M84 214c0-70 52-116 116-116s116 46 116 116z" fill="#ff7622" stroke="#4f5368" stroke-width="4" stroke-linejoin="round" class="edge"/>
   <path d="M112 196c4-44 36-76 76-82" fill="none" stroke="#ffb27a" stroke-width="10" stroke-linecap="round"/>
   <rect x="74" y="208" width="252" height="14" rx="7" fill="#e5651a"/>
   <rect x="190" y="78" width="20" height="24" rx="6" fill="#32343e"/>

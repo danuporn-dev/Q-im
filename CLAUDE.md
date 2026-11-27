@@ -428,6 +428,7 @@ q-im/
 | T58–T60 | Pay at checkout (D44) | AWAITING_PAYMENT unseen by shop/bell/crowd/reports; deadline cancels, late money refund due; switching while the webhook arrives never pays twice |
 | T39–T40 | Browser | Shop uploads/replaces/removes; every page shows a picture or drawing with alt text, no broken image |
 | T61 | JPEG with data after it, HEIC | Motion Photo accepted, cut and redrawn; PHP or archive in it refused; HEIC/HEIF refused asking for JPEG, PNG or WebP (D45) |
+| T62 | Drawn pictures on peach and white | Frame of img.art and the dish outline in every drawing reach 3:1 against their surroundings (computed from app.css and the SVGs) |
 
 ## 16. LINE Setup Checklist (not yet verified/configured)
 

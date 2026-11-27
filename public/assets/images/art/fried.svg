@@ -10,7 +10,7 @@
   <path d="M262 112l40-42" stroke="#fffaf4" stroke-width="18" stroke-linecap="round"/>
   <circle cx="306" cy="58" r="13" fill="#fffaf4"/>
   <circle cx="316" cy="76" r="13" fill="#fffaf4"/>
-  <ellipse cx="228" cy="150" rx="66" ry="50" fill="#d9822b" transform="rotate(-38 228 150)"/>
+  <ellipse cx="228" cy="150" rx="66" ry="50" fill="#d9822b" transform="rotate(-38 228 150)" stroke="#4f5368" stroke-width="4" stroke-linejoin="round" class="edge"/>
   <g fill="#c06d1d">
     <circle cx="206" cy="132" r="7"/>
     <circle cx="236" cy="118" r="6"/>
@@ -19,7 +19,7 @@
     <circle cx="196" cy="166" r="5"/>
     <circle cx="262" cy="124" r="4"/>
   </g>
-  <path d="M96 240l18-72h172l18 72z" fill="#ffffff"/>
+  <path d="M96 240l18-72h172l18 72z" fill="#ffffff" stroke="#4f5368" stroke-width="4" stroke-linejoin="round" class="edge"/>
   <path d="M114 168h172" stroke="#ff7622" stroke-width="6"/>
   <path d="M108 196h184" stroke="#ff7622" stroke-width="4" opacity=".35"/>
 </svg>

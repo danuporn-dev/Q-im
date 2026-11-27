@@ -126,6 +126,8 @@ dialog::backdrop { background: rgb(24 28 46 / .55); }
 .pic { width: 88px; height: 88px; border-radius: var(--radius); object-fit: cover; flex: none; }
 /* Pictures keep their box while loading (D41): a tint instead of white, and a fixed size for every class */
 img.pic, img.cover, img.hero, img.preview { background: var(--tint); }
+/* Drawn pictures share the peach of --tint: a frame keeps them apart from peach cards and the shop board (3:1 or more, tests/31) */
+img.art { outline: 2px solid var(--muted-on-tint); outline-offset: -2px; }
 .pic.sm { width: 48px; height: 48px; border-radius: var(--r-sm); font-size: 1.1rem; }
 .pic.xs { width: 28px; height: 28px; border-radius: 8px; font-size: .8rem; }
 .chip.withpic { display: inline-flex; align-items: center; gap: .35rem; padding-left: .25rem; }

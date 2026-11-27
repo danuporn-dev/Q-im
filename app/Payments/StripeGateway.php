@@ -13,6 +13,11 @@ use App\Support\HttpClient;
 final class StripeGateway implements Gateway
 {
     private const BASE = 'https://api.stripe.com/v1';
+    /**
+     * Every request names the API version it was written for, so a change of the account's default version in the
+     * Dashboard cannot change the answers this class reads (next_action.promptpay_display_qr_code, status, ...).
+     */
+    public const API_VERSION = '2025-03-31.basil';
 
     public function __construct(private readonly string $key)
     {
@@ -108,7 +113,7 @@ final class StripeGateway implements Gateway
 
     private function call(string $method, string $path, ?array $params, ?string $idempotencyKey): array
     {
-        $headers = ['Authorization: Bearer ' . $this->key, 'Accept: application/json'];
+        $headers = ['Authorization: Bearer ' . $this->key, 'Accept: application/json', 'Stripe-Version: ' . self::API_VERSION];
         if ($params !== null) {
             $headers[] = 'Content-Type: application/x-www-form-urlencoded';
         }

@@ -41,8 +41,10 @@ final class Browser
             [$binary, '--headless=new', "--remote-debugging-port=$port", "--user-data-dir=$profile", '--no-first-run', '--disable-gpu', '--disable-extensions', 'about:blank'],
             [1 => $null, 2 => $null], $pipes, null, null, ['bypass_shell' => true]
         );
+        // HTTP/1.1: Chrome 158 no longer answers the HTTP/1.0 that file_get_contents sends by default, and would hang.
+        $http = stream_context_create(['http' => ['protocol_version' => 1.1, 'header' => "Connection: close\r\n", 'timeout' => 2]]);
         for ($i = 0; $i < 100; $i++) {
-            $info = @file_get_contents("http://127.0.0.1:$port/json/list");
+            $info = @file_get_contents("http://127.0.0.1:$port/json/list", false, $http);
             foreach ($info ? json_decode($info, true) : [] as $target) {
                 if ($target['type'] === 'page') {
                     $this->connect($target['webSocketDebuggerUrl']);

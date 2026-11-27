@@ -24,7 +24,10 @@ final class TestDb
         // And their own picture folder, emptied with the database: uploads of qim_dev stay untouched.
         putenv('UPLOAD_DIR=' . self::uploads());
         // Nor the presentation settings of .env. Windows drops empty variables, so each gets a value that means "off".
-        foreach (['DEMO_ACCESS_CODE' => ' ', 'DEMO_PUBLIC' => 'false', 'TRUSTED_PROXY' => 'none', 'POLL_SECONDS' => '0', 'PICKUP_TOKEN_HOURS' => '12', 'PICKUP_TOKEN_KEY' => ' '] as $key => $off) {
+        // Nor its payment settings: tests run in manual mode with no Stripe key, and a test that needs online payment
+        // starts its own server with FakeGateway, so no test can ever reach Stripe with the key of .env.
+        foreach (['DEMO_ACCESS_CODE' => ' ', 'DEMO_PUBLIC' => 'false', 'TRUSTED_PROXY' => 'none', 'POLL_SECONDS' => '0', 'PICKUP_TOKEN_HOURS' => '12', 'PICKUP_TOKEN_KEY' => ' ',
+            'PAYMENT_MODE' => 'manual', 'PAYMENT_GATEWAY' => ' ', 'STRIPE_SECRET_KEY' => ' ', 'STRIPE_WEBHOOK_SECRET' => ' ', 'STRIPE_PLACEHOLDER_EMAIL' => ' ', 'STRIPE_ALLOW_LIVE' => '0', 'PROMPTPAY_QR_MINUTES' => '10'] as $key => $off) {
             putenv("$key=$off");
         }
         require_once dirname(__DIR__) . '/app/bootstrap.php';

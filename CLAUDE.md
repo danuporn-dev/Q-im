@@ -47,7 +47,7 @@
 - รายการโปรด (ร้าน/เมนู), รีวิวแบบไม่ระบุตัวตน 1 ครั้งต่อออเดอร์ COMPLETED, admin ซ่อนได้พร้อม audit
 - แจ้งเตือนในเว็บสำหรับลูกค้า, กระดิ่งและเสียงเตือนออเดอร์ใหม่ของร้าน, สถิติร้าน
 - PromptPay แบบร้านยืนยันเอง (ระบบไม่ตรวจยอด ไม่ถือ QR หรือสลิปเป็นหลักฐาน), QR รับอาหารแบบ token ใช้ครั้งเดียวและหมดอายุ
-- PromptPay ออนไลน์ผ่าน Stripe ยืนยันยอดอัตโนมัติด้วย webhook (`PAYMENT_MODE=gateway`, sandbox เท่านั้น, D42; คืนเงินทำมือใน Stripe Dashboard ระบบบันทึก REFUND_DUE) ดู docs/payments.md
+- PromptPay ออนไลน์ผ่าน Stripe ยืนยันยอดอัตโนมัติด้วย webhook (`PAYMENT_MODE=gateway`, sandbox เท่านั้น, D42) จ่ายตอนสั่ง: ออเดอร์ `AWAITING_PAYMENT` ร้านมองไม่เห็นจนจ่ายสำเร็จ หมดเวลาแล้วยกเลิกเอง (D44); คืนเงินทำมือใน Stripe Dashboard ระบบบันทึก REFUND_DUE ดู docs/payments.md
 - จอแสดงคิวทีวี: อยู่ในขอบเขต แต่เลื่อนไปทำทีหลัง (D33)
 
 ### Extensions (ทำเมื่อผู้ใช้สั่ง)
@@ -122,6 +122,8 @@ Login → ตรวจภาพรวมโรงอาหาร → อนุ�
 ### Order status (single source of truth)
 
 ```text
+AWAITING_PAYMENT -> PENDING (online PromptPay paid, or switched to paying at the shop; D44)
+AWAITING_PAYMENT -> CANCELLED (system: not paid by pay_by; D44)
 PENDING -> ACCEPTED -> PREPARING -> READY -> COMPLETED
 PENDING -> REJECTED (merchant)
 PENDING -> CANCELLED (customer or authorized merchant)
@@ -130,6 +132,7 @@ PREPARING -> CANCELLED (merchant, reason required; the normal cancellation after
 READY -> CANCELLED (merchant no-show only: UNPAID, minimum wait passed, reason required)
 ```
 
+- AWAITING_PAYMENT (D44) มีเฉพาะจ่ายออนไลน์ในโหมด gateway: ร้านมองไม่เห็น (shop queries ใช้ `placed_at IS NOT NULL`), ไม่แจ้งเตือน, ไม่นับ Crowd Level; ลูกค้ายกเลิกเองไม่ได้ (เปลี่ยนเป็นจ่ายที่ร้านหรือรอหมดเวลา); ร้านปฏิเสธ/ยกเลิกหลังจ่ายออนไลน์ = REFUND_DUE
 - COMPLETED, CANCELLED, REJECTED เป็น terminal states; READY ที่ไม่ได้รับนานให้แจ้งร้านตรวจสอบ ไม่ auto-cancel หรือทิ้งอาหารโดยไม่มีนโยบายที่ได้รับอนุมัติ
 - No-show (อนุมัติแล้ว): สมาชิกร้านยกเลิก READY เองได้เมื่อ payment ยัง UNPAID, พร้อมรับครบเวลาขั้นต่ำเท่าตัวเตือน READY (`READY_ALERT_MINUTES` ค่าเริ่มต้น 20) และใส่เหตุผล; ตรวจแบบ atomic, บันทึก order_status_logs และ audit_logs; PAID แล้วห้ามยกเลิก; ระบบไม่ยกเลิกให้เอง
 - ห้ามย้อนสถานะโดยไม่มี workflow ที่อนุมัติ; ทุก transition ตรวจสิทธิ์และ current state ที่ backend พร้อมบันทึก actor, timestamp, reason
@@ -225,7 +228,7 @@ flowchart LR
 | carts | id, user_id, shop_id, updated_at |
 | cart_items | id, cart_id, menu_id, quantity, note |
 | cart_item_options | cart_item_id, option_id |
-| orders | id, public_order_no UNIQUE, user_id, shop_id, status, total, idempotency_key, created_at, accepted_at, ready_at, completed_at; unique(user_id,idempotency_key) |
+| orders | id, public_order_no UNIQUE, user_id, shop_id, status, total, idempotency_key, created_at, placed_at (ถึงร้าน), pay_by (กำหนดจ่ายออนไลน์, D44), accepted_at, ready_at, completed_at; unique(user_id,idempotency_key) |
 | order_items | id, order_id, menu_id, name_snapshot, unit_price, quantity, note |
 | order_item_options | order_item_id, option_id, name_snapshot, price_delta_snapshot |
 | queues | id, order_id UNIQUE, shop_id, business_date, queue_number, assigned_at; unique(shop_id,business_date,queue_number) |
@@ -287,8 +290,8 @@ Prefix `/api/v1`; JSON response `{ "data": ... }` หรือ `{ "error": { "co
 | GET | /merchant/shops/{id}/notifications, /merchant/shops/{id}/reviews | shop bell; reviews read only |
 | GET/PATCH | /admin/reviews, /admin/reviews/{id} | list; hide/unhide with a reason |
 | POST | /merchant/orders/{id}/complete | body: pickup_qr (token or full order number) or override_reason; payment_received + method when unpaid |
-| POST | /orders/{id}/online-payment, /orders/{id}/online-payment/check | QR PromptPay ออนไลน์ (PREPARING/READY + UNPAID); ตรวจกับ Stripe (D42) |
-| POST | /orders/{id}/payment-method | เปลี่ยนเป็นจ่ายที่ร้าน หลัง Stripe ยกเลิก intent สำเร็จ |
+| POST | /orders/{id}/online-payment, /orders/{id}/online-payment/check | QR PromptPay ออนไลน์ (AWAITING_PAYMENT + UNPAID, สร้างให้ตอน checkout แล้ว); ตรวจกับ Stripe (D42, D44) |
+| POST | /orders/{id}/payment-method | เปลี่ยนเป็นจ่ายที่ร้าน (AWAITING_PAYMENT ก่อนกำหนด) หลัง Stripe ยกเลิก intent สำเร็จ แล้วเข้าร้านเป็น PENDING |
 | POST | /api/webhooks/stripe | Stripe webhook (ลายเซ็น Stripe-Signature ไม่มี session/CSRF) |
 | GET/POST | /merchant/shops/{id}/refunds, /merchant/shops/{id}/refunds/{id}/done, /admin/refunds, /admin/refunds/{id}/done | รอคืนเงินและทำเครื่องหมายคืนแล้ว |
 | POST | /merchant/shops/{id}/images | upload a menu/shop picture (shop members; checked from content, redrawn by GD, D41) |
@@ -421,7 +424,8 @@ q-im/
 | T44–T47 | Succeeded webhook | PAID once by the gateway; mismatched amount/order/currency not PAID; late money refund due; concurrent deliveries PAID once |
 | T48–T50 | Ownership, state, switching, checking | Owner only, CSRF, right state; switch only after the gateway cancelled; check reads Stripe; rate limited |
 | T51–T52, T54 | Keys, manual mode, refunds | Only sk_test_; no key in responses or logs; manual unchanged; refunds listed per shop/admin and marked once |
-| T53, T55 | Browser | Customer pays online and switches; shop hands over without a money step and marks refunds |
+| T53, T55 | Browser | Customer gets the QR at once, pays online, switches, or times out; shop hands over without a money step and marks refunds |
+| T58–T60 | Pay at checkout (D44) | AWAITING_PAYMENT unseen by shop/bell/crowd/reports; deadline cancels, late money refund due; switching while the webhook arrives never pays twice |
 | T39–T40 | Browser | Shop uploads/replaces/removes; every page shows a picture or drawing with alt text, no broken image |
 
 ## 16. LINE Setup Checklist (not yet verified/configured)

@@ -427,6 +427,7 @@ q-im/
 | T53, T55 | Browser | Customer gets the QR at once, pays online, switches, or times out; shop hands over without a money step and marks refunds |
 | T58–T60 | Pay at checkout (D44) | AWAITING_PAYMENT unseen by shop/bell/crowd/reports; deadline cancels, late money refund due; switching while the webhook arrives never pays twice |
 | T39–T40 | Browser | Shop uploads/replaces/removes; every page shows a picture or drawing with alt text, no broken image |
+| T61 | JPEG with data after it, HEIC | Motion Photo accepted, cut and redrawn; PHP or archive in it refused; HEIC/HEIF refused asking for JPEG, PNG or WebP (D45) |
 
 ## 16. LINE Setup Checklist (not yet verified/configured)
 

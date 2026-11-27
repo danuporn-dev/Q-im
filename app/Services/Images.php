@@ -220,8 +220,9 @@ final class Images
     private static function decode(string $source, int $max): \GdImage
     {
         $bytes = (string) file_get_contents($source);
-        $orientation = self::inspect($bytes);
-        $original = @imagecreatefromstring($bytes);
+        [$orientation, $length] = self::inspect($bytes);
+        // Only the picture itself is decoded and redrawn: data after a JPEG (a Motion Photo video) is dropped.
+        $original = @imagecreatefromstring(substr($bytes, 0, $length));
         unset($bytes);
         if (!$original instanceof \GdImage) {
             throw self::rejected('corrupt', 'ไฟล์รูปเสียหายหรือเป็นรูปเคลื่อนไหว');
@@ -284,16 +285,21 @@ final class Images
      * Rejects anything but a single well-formed JPEG, PNG or WebP picture of a sensible size, and files that
      * are also something else (a "polyglot": a picture with a page, script or archive in it or after it).
      *
-     * @return int EXIF orientation (1 = as stored)
+     * A JPEG may carry other data after its end marker: phones append the video of a Motion Photo there, and
+     * cameras pad the file. That data is never decoded or kept (the picture is redrawn from the bytes before it), so
+     * it is accepted, unless it is a script, page or document (the markers below, searched in the whole file) or
+     * starts as an archive or a program.
+     *
+     * @return array{0: int, 1: int} EXIF orientation (1 = as stored), and how many bytes are the picture
      */
-    private static function inspect(string $b): int
+    private static function inspect(string $b): array
     {
         $orientation = 1;
         if (str_starts_with($b, "\xFF\xD8\xFF")) {
             $mime = 'image/jpeg';
             [$meta, $end, $orientation] = self::jpeg($b);
-            // Some cameras pad the file after the picture; anything else there is hidden content.
-            $after = trim(substr($b, $end), "\x00\xFF");
+            $tail = ltrim(substr($b, $end), "\x00\xFF");
+            $after = preg_match('/^(PK\x03\x04|PK\x05\x06|Rar!|7z\xBC\xAF|\x7FELF|MZ|\x1F\x8B|#!)/', $tail) === 1 ? $tail : '';
         } elseif (str_starts_with($b, "\x89PNG\r\n\x1A\n")) {
             $mime = 'image/png';
             [$meta, $end] = self::png($b);
@@ -303,6 +309,10 @@ final class Images
             [$meta, $end] = self::webp($b);
             $after = substr($b, $end);
         } else {
+            // HEIC/HEIF (iPhone photos and some Android phones): an ISO media file whose brand names the format.
+            if (strlen($b) >= 12 && substr($b, 4, 4) === 'ftyp' && preg_match('/^(heic|heix|hevc|hevx|heim|heis|hevm|hevs|mif1|msf1|avif|avis)/', substr($b, 8, 4))) {
+                throw self::rejected('heic', 'ไม่รับไฟล์ HEIC/HEIF (รูปจาก iPhone หรือมือถือบางรุ่น) กรุณาส่งเป็นไฟล์ JPEG, PNG หรือ WebP เช่น ตั้งกล้องเป็นแบบ "เข้ากันได้มากที่สุด" (Most Compatible) หรือแคปหน้าจอรูปนั้นแล้วส่งแทน');
+            }
             $start = strtolower(ltrim(substr($b, 0, 1024), "\xEF\xBB\xBF \t\r\n"));
             if (str_starts_with($start, '<svg') || (str_starts_with($start, '<?xml') || str_starts_with($start, '<!')) && str_contains($start, '<svg')) {
                 throw self::rejected('svg', 'ไม่รับไฟล์ SVG กรุณาใช้รูป JPEG, PNG หรือ WebP');
@@ -331,7 +341,7 @@ final class Images
         if (min($w, $h) < self::MIN_SIDE || max($w, $h) > self::MAX_SIDE || $w * $h > self::MAX_PIXELS) {
             throw self::rejected('dimensions', 'รูปต้องกว้างและสูงอย่างน้อย ' . self::MIN_SIDE . ' px และไม่เกิน ' . self::MAX_SIDE . ' px');
         }
-        return $orientation;
+        return [$orientation, $mime === 'image/jpeg' ? $end : strlen($b)];
     }
 
     private static function corrupt(): HttpError

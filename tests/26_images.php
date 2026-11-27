@@ -100,6 +100,28 @@ foreach ([
 }
 T::status(201, $send($m, $s['shop'], $jpeg . str_repeat("\x00", 32)), 'padding after a JPEG is fine');
 
+T::group('T61 JPEG with data after it (Motion Photo) accepted and cut; HEIC refused');
+// A Motion Photo: the photo, then an MP4 video (ftyp box first), and Samsung's marker at the very end.
+$video = "\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" . random_bytes(4096) . 'MotionPhoto_Data';
+foreach (['Android Motion Photo (video after the JPEG)' => $jpeg . $video, 'any binary data after the JPEG' => $jpeg . "\x13\x37" . random_bytes(2048)] as $label => $bytes) {
+    $r = $send($m, $s['shop'], $bytes);
+    $served = $anon->get("$a/images/{$key($r)}")['raw'];
+    T::ok($r['status'] === 201 && str_starts_with($served, "\xFF\xD8") && str_ends_with($served, "\xFF\xD9") && !str_contains($served, 'ftypmp42') && !str_contains($served, 'MotionPhoto') && strlen($served) < strlen($bytes), "$label: accepted, redrawn as a JPEG without the extra data", [$r['status'], $reason($r), strlen($served)]);
+}
+$r = $send($m, $s['shop'], $jpeg . substr($video, 0, 2000) . '<?php echo 1; ?>' . substr($video, 2000));
+T::eq([422, 'hidden'], [$r['status'], $reason($r)], 'PHP hidden inside the data after the JPEG: refused');
+$r = $send($m, $s['shop'], $jpeg . "\x00\x00\x00MZ\x90\x00" . random_bytes(256));
+T::eq([422, 'hidden'], [$r['status'], $reason($r)], 'a program after the JPEG: refused');
+$r = $send($m, $s['shop'], substr($jpeg, 0, 2) . "\xFF\xFE" . pack('n', 18) . '<?php phpinfo();' . substr($jpeg, 2));
+T::eq([422, 'hidden'], [$r['status'], $reason($r)], 'PHP inside the JPEG itself: refused');
+foreach (['heic', 'mif1', 'avif'] as $brand) {
+    $heif = "\x00\x00\x00\x1Cftyp{$brand}\x00\x00\x00\x00mif1heic" . "\x00\x00\x00\x08free" . random_bytes(512);
+    $r = $send($m, $s['shop'], $heif, 'IMG_0001.HEIC', 'image/heic');
+    T::ok($r['status'] === 422 && $reason($r) === 'heic' && str_contains((string) ($r['body']['error']['message'] ?? ''), 'JPEG, PNG หรือ WebP'), "HEIF brand $brand: refused, asking for JPEG, PNG or WebP", $r['body']['error'] ?? null);
+}
+$r = $send($m, $s['shop'], substr($jpeg, 0, 1200));
+T::eq([422, 'corrupt'], [$r['status'], $reason($r)], 'a JPEG that cannot be decoded is still refused');
+
 T::group('T33 only members of the shop upload or use its pictures');
 $c = Fixture::customer($base, 'img');
 T::status(401, $send($c, $s['shop'], $jpeg), 'customer cannot upload');

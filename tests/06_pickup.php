@@ -28,7 +28,8 @@ $code = $v['order_no'];
 T::ok(!array_key_exists('pickup_code', $v), 'no separate pickup code: the QR holds the order number');
 T::status(409, $m->post("$a/merchant/orders/$o/complete", ['pickup_qr' => $code]), 'refused', 'PAYMENT_REQUIRED');
 T::status(409, $m->post("$a/merchant/orders/$o/complete", ['pickup_qr' => $code, 'payment_received' => 'yes']), 'payment_received must be true', 'PAYMENT_REQUIRED');
-T::status(422, $m->post("$a/merchant/orders/$o/complete", ['pickup_qr' => substr($code, 0, -1) . 'Z', 'payment_received' => true]), 'wrong QR with money', 'PICKUP_QR_WRONG');
+// One character changed; the order number may itself end in Z (it did once and the "wrong" code was right).
+T::status(422, $m->post("$a/merchant/orders/$o/complete", ['pickup_qr' => substr($code, 0, -1) . (str_ends_with($code, 'Z') ? 'Y' : 'Z'), 'payment_received' => true]), 'wrong QR with money', 'PICKUP_QR_WRONG');
 T::eq(['READY', 'UNPAID', 0], [Database::value('SELECT status FROM orders WHERE id = ?', [$o]), Database::value('SELECT status FROM payments WHERE order_id = ?', [$o]), (int) Database::value("SELECT COUNT(*) FROM audit_logs WHERE action = 'payment.confirm' AND entity_id = ?", [$o])], 'still READY and UNPAID');
 
 T::group('T14 merchant ownership: payment');

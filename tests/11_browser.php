@@ -116,7 +116,8 @@ try {
     T::ok(!$b->sees('รับเงิน ฿', 1) && !$b->sees('เริ่มทำ', 0.5), 'no separate payment or start buttons');
     $b->click('ส่งมอบ');
     T::ok($b->sees('สแกน QR ก่อน แล้วยืนยันรับเงิน') && $b->sees('ถ่ายรูป QR'), 'dialog shows the amount and the fallbacks');
-    $b->fill('dialog input[name=pickup_qr]', substr($qr, 0, -1) . 'Z');
+    // One character changed; the order number may itself end in Z.
+    $b->fill('dialog input[name=pickup_qr]', substr($qr, 0, -1) . (str_ends_with($qr, 'Z') ? 'Y' : 'Z'));
     $b->click('ตรวจ', $dialog);
     T::ok($b->sees('QR ไม่ตรงกับออเดอร์นี้'), 'wrong number is refused');
     $b->fill('dialog input[name=pickup_qr]', $qr);

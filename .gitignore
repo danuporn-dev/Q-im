@@ -18,8 +18,9 @@
 .DS_Store
 Thumbs.db
 
-# Demo photos stay on the presenting computer (docs/demo.md); their credits list and the lock are committed
+# Demo photos: the openly licensed ones listed in CREDITS.md are committed (960 px JPEG, D43); others stay local
 /public/assets/demo-food/*
+!/public/assets/demo-food/*.jpg
 !/public/assets/demo-food/.gitkeep
 !/public/assets/demo-food/.htaccess
 !/public/assets/demo-food/CREDITS.md

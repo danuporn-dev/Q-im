@@ -337,7 +337,9 @@ async function home(alive) {
     crowdCard,
     h('h2.section', {}, 'หมวดหมู่'), chips,
     h('h2.section', {}, 'ร้านในโรงอาหาร'), list,
-    h('p.muted', { style: 'margin-top:1rem' }, infoLinks()),
+    h('p.muted', { style: 'margin-top:1rem' }, infoLinks(),
+      // Licences of the demo photos (Wikimedia Commons, D41): a plain page outside the app.
+      h('a', { href: '../credits', style: 'display:inline-flex;min-height:44px;align-items:center' }, 'เครดิตรูปภาพ')),
   ]);
   stop = poll(draw, 10000);
 }

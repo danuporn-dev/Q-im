@@ -183,16 +183,7 @@ final class Images
 
     private static function save(string $source, int $shopId, ?int $userId): string
     {
-        $bytes = (string) file_get_contents($source);
-        $orientation = self::inspect($bytes);
-        $original = @imagecreatefromstring($bytes);
-        unset($bytes);
-        if (!$original instanceof \GdImage) {
-            throw self::rejected('corrupt', 'ไฟล์รูปเสียหายหรือเป็นรูปเคลื่อนไหว');
-        }
-        // Reduced before turning: turning the original would need its memory twice (up to 2 x 96 MB).
-        $image = self::upright(self::resize($original, self::FULL), $orientation);
-        unset($original);
+        $image = self::decode($source, self::FULL);
         $key = bin2hex(random_bytes(16));
         [$thumb, $full] = self::files($key);
         try {
@@ -208,6 +199,35 @@ final class Images
             throw $e;
         }
         return $key;
+    }
+
+    /**
+     * The same checks and drawing as an upload, into one new JPEG file: used for the demo photos that are kept in
+     * public/assets/demo-food (D41), so they carry no metadata either. Refuses to replace an existing file.
+     */
+    public static function redraw(string $source, string $target, int $max = self::FULL): void
+    {
+        if (!is_file($source)) {
+            throw self::rejected('missing', 'ไม่พบไฟล์รูป');
+        }
+        if ((int) filesize($source) > self::MAX_BYTES) {
+            throw self::tooLarge();
+        }
+        self::write(self::decode($source, $max), $target);
+    }
+
+    /** Checks the file from its bytes and returns it upright, no larger than $max. */
+    private static function decode(string $source, int $max): \GdImage
+    {
+        $bytes = (string) file_get_contents($source);
+        $orientation = self::inspect($bytes);
+        $original = @imagecreatefromstring($bytes);
+        unset($bytes);
+        if (!$original instanceof \GdImage) {
+            throw self::rejected('corrupt', 'ไฟล์รูปเสียหายหรือเป็นรูปเคลื่อนไหว');
+        }
+        // Reduced before turning: turning the original would need its memory twice (up to 2 x 96 MB).
+        return self::upright(self::resize($original, $max), $orientation);
     }
 
     /** A new true-colour image no larger than $max on its longer side. */

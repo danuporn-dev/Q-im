@@ -95,7 +95,7 @@ try {
     $late = "document.querySelectorAll('.ocard.late').length";
     T::eq(0, $b->js($late), 'no alert while orders are fresh');
     T::ok(!$b->sees('ลูกค้าไม่มารับ', 0.5), 'no no-show button before the wait');
-    Database::update('orders', $order, ['created_at' => $ago(6)]);
+    Database::update('orders', $order, ['created_at' => $ago(6), 'placed_at' => $ago(6)]);
     T::ok($b->sees('รอยืนยันมา 6 นาที'), 'PENDING for 6 minutes: alert appears through polling');
     Database::update('orders', $ready, ['ready_at' => $ago(21)]);
     T::ok($b->sees('พร้อมรับมา 21 นาที กรุณาตรวจสอบ'), 'READY for 21 minutes: alert appears through polling');

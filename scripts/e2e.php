@@ -5,9 +5,9 @@ declare(strict_types=1);
 // Development only. Runs one whole order over real HTTP on the throw-away qim_test:
 // merchant sets up the menu and PromptPay, customer orders with PromptPay, accept (cooking starts), ready with the
 // PromptPay QR, the shop confirms the money (twice, recorded once), scans the single-use pickup QR, history, report;
-// the pickup QR cannot be used again. Then the same with online PromptPay (D42, PAYMENT_MODE=gateway, FakeGateway: no call
-// to Stripe): order, shop accepts, the customer pays online, the signed webhook makes it PAID, ready, the pickup QR
-// completes it with no money step.
+// the pickup QR cannot be used again. Then the same with online PromptPay (D42, D44, PAYMENT_MODE=gateway, FakeGateway: no
+// call to Stripe): order with the QR at once, unseen by the shop, the signed webhook makes it PAID and sends it to the shop,
+// accept, ready, the pickup QR completes it with no money step.
 
 require dirname(__DIR__) . '/tests/lib.php';
 require dirname(__DIR__) . '/tests/fixture.php';
@@ -84,15 +84,15 @@ try {
     $r = $gc->post("$a/orders", ['idempotency_key' => bin2hex(random_bytes(16)), 'quote' => $cart['body']['data']['quote'], 'payment_method' => 'STRIPE_PROMPTPAY']);
     T::status(201, $r, 'online: checkout with online PromptPay');
     $go = $r['body']['data']['id'];
-    T::status(200, $gm->post("$a/merchant/orders/$go/accept"), 'online: shop accepts');
-    $view = $gc->post("$a/orders/$go/online-payment")['body']['data'];
-    T::eq('qr', $view['online_payment']['state'] ?? null, 'online: customer gets the QR');
+    T::eq(['AWAITING_PAYMENT', 'qr'], [$r['body']['data']['status'], $r['body']['data']['online_payment']['state'] ?? null], 'online: the QR comes with the order');
+    T::status(404, $gm->post("$a/merchant/orders/$go/accept"), 'online: the shop cannot see it before the money');
     $intentId = (string) App\Support\Database::value('SELECT intent_id FROM payment_intents WHERE order_id = ?', [$go]);
     $intent = App\Payments\FakeGateway::change($fake, $intentId, ['status' => 'succeeded']);
     $event = json_encode(['id' => 'evt_e2e' . bin2hex(random_bytes(6)), 'object' => 'event', 'type' => 'payment_intent.succeeded', 'data' => ['object' => ['id' => $intentId, 'object' => 'payment_intent', 'status' => 'succeeded', 'amount' => $intent['amount'], 'currency' => 'thb', 'metadata' => $intent['metadata']]]]);
     T::status(200, (new Client($gw))->post('/api/webhooks/stripe', $event, ['Content-Type: application/json', 'Stripe-Signature: ' . App\Payments\StripeSignature::header($event, $secret, time())]), 'online: Stripe webhook');
     $view = $gc->get("$a/orders/$go")['body']['data'];
-    T::eq(['PAID', 'STRIPE_PROMPTPAY', 'paid'], [$view['payment_status'], $view['payment_method'], $view['online_payment']['state']], 'online: PAID automatically');
+    T::eq(['PENDING', 'PAID', 'STRIPE_PROMPTPAY', 'paid'], [$view['status'], $view['payment_status'], $view['payment_method'], $view['online_payment']['state']], 'online: PAID automatically, sent to the shop');
+    T::status(200, $gm->post("$a/merchant/orders/$go/accept"), 'online: shop accepts');
     T::status(200, $gm->post("$a/merchant/orders/$go/ready"), 'online: ready');
     $token = $gc->get("$a/orders/$go")['body']['data']['pickup']['qr'] ?? '';
     T::status(200, $gm->post("$a/merchant/orders/$go/complete", ['pickup_qr' => $token]), 'online: shop scans the pickup QR, no money step');

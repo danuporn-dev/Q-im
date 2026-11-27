@@ -22,7 +22,8 @@ $outbox = static fn (): array => Database::rows('SELECT id, status, attempts, ne
 
 T::group('T25 the shop bell');
 $bell = static fn (): array => $m->get("$a/merchant/shops/{$s['shop']}/notifications")['body']['data'];
-T::eq(['pending' => 2, 'latest_id' => $o2], $bell(), 'two orders wait');
+$arrived = (int) Database::value("SELECT MAX(id) FROM order_status_logs WHERE order_id = ? AND to_status = 'PENDING'", [$o2]);
+T::eq(['pending' => 2, 'latest_id' => $o2, 'latest' => $arrived], $bell(), 'two orders wait; "latest" is when the newest one reached the shop');
 T::status(404, $m2->get("$a/merchant/shops/{$s['shop']}/notifications"), 'another shop');
 T::status(401, $c->get("$a/merchant/shops/{$s['shop']}/notifications"), 'a customer');
 T::status(401, $anon->get("$a/merchant/shops/{$s['shop']}/notifications"), 'no session');
@@ -32,7 +33,7 @@ T::eq(0, $count($c), 'nothing before the shop answers');
 $m->post("$a/merchant/orders/$o/accept");
 $m->post("$a/merchant/orders/$o/ready");
 $m->post("$a/merchant/orders/$o2/reject", ['reason' => 'วัตถุดิบหมด']);
-T::eq(['pending' => 0, 'latest_id' => 0], $bell(), 'the bell is quiet again');
+T::eq(['pending' => 0, 'latest_id' => 0, 'latest' => 0], $bell(), 'the bell is quiet again');
 $r = $inbox($c);
 T::eq([['ORDER_READY', 'ORDER_ACCEPTED'], 2, 2], [array_column($r['data'], 'type'), $r['meta']['unread'], $r['meta']['total']], 'accepted and ready, newest first');
 $keys = array_keys($r['data'][0]);

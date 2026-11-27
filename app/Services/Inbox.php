@@ -51,10 +51,19 @@ final class Inbox
         Database::run('INSERT IGNORE INTO notification_reads (notification_id, read_at) SELECT id, ? FROM notifications WHERE user_id = ?', [Clock::now(), $userId]);
     }
 
-    /** What the shop's bell needs: how many orders wait for an answer, and the newest of them. */
+    /**
+     * What the shop's bell needs: how many orders wait for an answer, the newest of them, and "latest", which grows
+     * whenever an order reaches the shop. An online order arrives when it is paid (D44), after newer orders may have
+     * arrived, so the bell compares "latest" (the status log row that made it PENDING), not order ids.
+     */
     public static function shopBell(int $shopId): array
     {
-        $row = Database::row("SELECT COUNT(*) AS pending, COALESCE(MAX(id), 0) AS latest FROM orders WHERE shop_id = ? AND status = 'PENDING'", [$shopId]);
-        return ['pending' => (int) $row['pending'], 'latest_id' => (int) $row['latest']];
+        $row = Database::row(
+            "SELECT COUNT(*) AS pending, COALESCE(MAX(o.id), 0) AS latest_id,
+                    COALESCE((SELECT MAX(l.id) FROM order_status_logs l WHERE l.order_id IN (SELECT x.id FROM orders x WHERE x.shop_id = ? AND x.status = 'PENDING') AND l.to_status = 'PENDING'), 0) AS latest
+             FROM orders o WHERE o.shop_id = ? AND o.status = 'PENDING'",
+            [$shopId, $shopId]
+        );
+        return ['pending' => (int) $row['pending'], 'latest_id' => (int) $row['latest_id'], 'latest' => (int) $row['latest']];
     }
 }

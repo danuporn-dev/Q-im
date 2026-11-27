@@ -34,7 +34,7 @@ final class OrderFlow
     public const PICKUP_ATTEMPTS = 5;
     /** Already done for these actions: a repeated tap answers 200 and changes nothing. */
     private const DONE = ['accept' => ['ACCEPTED', 'PREPARING']];
-    private const STAMP = ['ACCEPTED' => 'accepted_at', 'PREPARING' => 'preparing_at', 'READY' => 'ready_at', 'COMPLETED' => 'completed_at'];
+    private const STAMP = ['PENDING' => 'placed_at', 'ACCEPTED' => 'accepted_at', 'PREPARING' => 'preparing_at', 'READY' => 'ready_at', 'COMPLETED' => 'completed_at'];
 
     /** Minutes an order may stay READY before the shop is alerted and may close it as a no-show. */
     public static function readyWaitMinutes(): int
@@ -58,6 +58,9 @@ final class OrderFlow
             }
             if ($order['status'] === 'CANCELLED') {
                 return;
+            }
+            if ($order['status'] === 'AWAITING_PAYMENT') {
+                throw HttpError::conflict('AWAITING_PAYMENT', 'ออเดอร์นี้รอชำระเงิน ถ้าไม่จ่ายภายในเวลาจะยกเลิกเอง หรือเปลี่ยนเป็นจ่ายที่ร้าน', ['status' => $order['status']]);
             }
             if ($order['status'] !== 'PENDING') {
                 throw HttpError::conflict('INVALID_STATE', 'ร้านรับออเดอร์แล้ว กรุณาติดต่อร้านเพื่อยกเลิก', ['status' => $order['status']]);
@@ -98,8 +101,8 @@ final class OrderFlow
             if ($to === 'READY') {
                 PickupTokens::issue($orderId, Clock::now());
             }
-            if ($to === 'CANCELLED') {
-                OnlinePayments::cancelledByShop($orderId, $userId, (string) $reason);
+            if ($to === 'CANCELLED' || $to === 'REJECTED') {
+                OnlinePayments::cancelledByShop($orderId, $userId, ($to === 'REJECTED' ? 'ร้านปฏิเสธหลังลูกค้าชำระ: ' : 'ร้านยกเลิกหลังลูกค้าชำระ: ') . $reason);
             }
             if ($event !== null) {
                 Notifications::enqueue($orderId, (int) $order['user_id'], $event);
@@ -110,6 +113,23 @@ final class OrderFlow
             OnlinePayments::cancelOpen($orderId);
         }
     }
+
+    /**
+     * An online order reaches the shop (D44): AWAITING_PAYMENT to PENDING, after Stripe confirmed the money or after
+     * the customer switched to paying at the shop. The caller holds the order and payment row locks.
+     */
+    public static function release(array $order, ?int $actorId, ?string $reason): void
+    {
+        self::move($order, 'PENDING', $actorId, $reason);
+    }
+
+    /** An online order not paid by its deadline is cancelled by the system (D44). The caller holds the order lock. */
+    public static function expireUnpaid(array $order): void
+    {
+        self::move($order, 'CANCELLED', null, self::PAYMENT_EXPIRED);
+    }
+
+    public const PAYMENT_EXPIRED = 'หมดเวลาชำระเงิน';
 
     /**
      * Gives free kitchen slots (shops.capacity) to the oldest waiting orders, in queue order, by setting
@@ -256,19 +276,20 @@ final class OrderFlow
 
     private static function lock(int $orderId): ?array
     {
-        return Database::row('SELECT id, public_order_no, user_id, shop_id, status, total, ready_at, pickup_failures FROM orders WHERE id = ? FOR UPDATE', [$orderId]);
+        return Database::row('SELECT id, public_order_no, user_id, shop_id, status, total, placed_at, ready_at, pickup_failures FROM orders WHERE id = ? FOR UPDATE', [$orderId]);
     }
 
     private static function lockForMember(int $userId, int $orderId): array
     {
         $order = self::lock($orderId) ?? throw HttpError::notFound('ไม่พบออเดอร์');
-        if (!Database::value('SELECT 1 FROM shop_members WHERE shop_id = ? AND user_id = ?', [$order['shop_id'], $userId])) {
+        // An online order that was never paid never reached the shop (D44).
+        if ($order['placed_at'] === null || !Database::value('SELECT 1 FROM shop_members WHERE shop_id = ? AND user_id = ?', [$order['shop_id'], $userId])) {
             throw HttpError::notFound('ไม่พบออเดอร์');
         }
         return $order;
     }
 
-    private static function move(array $order, string $to, int $actorId, ?string $reason): void
+    private static function move(array $order, string $to, ?int $actorId, ?string $reason): void
     {
         $now = Clock::now();
         $changes = ['status' => $to];

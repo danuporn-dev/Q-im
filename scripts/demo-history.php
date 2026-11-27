@@ -93,7 +93,7 @@ try {
                     $cooked = $status === 'COMPLETED';
                     $order = Database::insert('orders', [
                         'public_order_no' => $number, 'user_id' => $customer, 'shop_id' => $shop['id'], 'status' => $status, 'total' => $amount,
-                        'idempotency_key' => "demohist-{$shop['id']}-$date-$n", 'created_at' => $utc(0),
+                        'idempotency_key' => "demohist-{$shop['id']}-$date-$n", 'created_at' => $utc(0), 'placed_at' => $utc(0),
                         'accepted_at' => $cooked ? $utc($accept) : null, 'preparing_at' => $cooked ? $utc($accept) : null, 'cooking_started_at' => $cooked ? $utc($accept) : null,
                         'ready_at' => $cooked ? $utc($ready) : null, 'completed_at' => $cooked ? $utc($done) : null,
                     ]);

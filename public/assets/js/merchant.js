@@ -125,7 +125,8 @@ function watchBell() {
   stopBell();
   const shop = shopId;
   const check = async () => {
-    const { pending, latest_id: latest } = await get(`/merchant/shops/${shop}/notifications`);
+    // "latest" grows whenever an order reaches the shop, also an online order that arrives when it is paid (D44).
+    const { pending, latest } = await get(`/merchant/shops/${shop}/notifications`);
     if (shop !== shopId) return;
     bellCount.textContent = `🔔 ออเดอร์ใหม่ ${pending}`;
     bellCount.classList.toggle('has', pending > 0);
@@ -159,12 +160,14 @@ function card(o, refresh, shop) {
     const reason = await askReason(title, 'เหตุผล (ลูกค้าจะเห็น)', yes, presets);
     if (reason) await act(action, { reason })({ currentTarget: target });
   };
-  const waited = Math.floor((Date.now() - new Date(o.created_at)) / 60000);
+  // An online order reaches the shop when it is paid (D44): waiting counts from then, not from checkout.
+  const placed = o.placed_at || o.created_at;
+  const waited = Math.floor((Date.now() - new Date(placed)) / 60000);
   const online = o.payment_method === 'STRIPE_PROMPTPAY';
   const paidOnline = online && o.payment_status === 'PAID';
   const cooking = () => [button('อาหารพร้อม', act('ready')), button('ยกเลิก', reasoned('cancel', paidOnline ? 'ลูกค้าจ่ายออนไลน์แล้ว: ยกเลิกแล้วต้องคืนเงินเองใน Stripe Dashboard (ดูหน้ารอคืนเงิน)' : 'ยกเลิกออเดอร์ที่กำลังทำ', 'ยกเลิกออเดอร์', ['วัตถุดิบหมด', 'อุปกรณ์ขัดข้อง', 'ลูกค้าขอยกเลิก']), '.danger.ghost')];
   const buttons = {
-    PENDING: () => [button('รับออเดอร์', act('accept')), button('ปฏิเสธ', reasoned('reject', 'ปฏิเสธออเดอร์', 'ปฏิเสธ', ['วัตถุดิบหมด', 'ร้านกำลังจะปิด', 'ออเดอร์เต็ม']), '.danger.ghost')],
+    PENDING: () => [button('รับออเดอร์', act('accept')), button('ปฏิเสธ', reasoned('reject', paidOnline ? 'ลูกค้าจ่ายออนไลน์แล้ว: ปฏิเสธแล้วต้องคืนเงินเองใน Stripe Dashboard (ดูหน้ารอคืนเงิน)' : 'ปฏิเสธออเดอร์', 'ปฏิเสธ', ['วัตถุดิบหมด', 'ร้านกำลังจะปิด', 'ออเดอร์เต็ม']), '.danger.ghost')],
     ACCEPTED: cooking,
     PREPARING: cooking,
     READY: () => [button('ส่งมอบ', (e) => pickup(o, refresh, e.currentTarget, shop.promptpay_enabled || byTransfer)),
@@ -173,7 +176,7 @@ function card(o, refresh, shop) {
   const readyFor = o.ready_at ? Math.floor((Date.now() - new Date(o.ready_at)) / 60000) : 0;
   const late = (o.status === 'PENDING' && waited >= 5) || (o.status === 'READY' && readyFor >= readyAlert);
   return h('article.ocard' + (late ? '.late' : ''), {},
-    h('div.row.between', {}, h('span.q', {}, o.queue ? queueNo(o.queue.number) : 'ใหม่'), h('span.muted', {}, `สั่ง ${time(o.created_at)}`)),
+    h('div.row.between', {}, h('span.q', {}, o.queue ? queueNo(o.queue.number) : 'ใหม่'), h('span.muted', {}, `สั่ง ${time(placed)}`)),
     o.queue && o.queue.business_date !== today() ? h('div.muted', {}, 'คิววันที่ ', o.queue.business_date) : null,
     late ? h('p.notice', {}, o.status === 'PENDING' ? `รอยืนยันมา ${waited} นาที` : `พร้อมรับมา ${readyFor} นาที กรุณาตรวจสอบ`) : null,
     lines(o),

@@ -16,7 +16,7 @@ final class Orders
     private const MAX_TOTAL = 9_999_999_999;
     private const CUSTOMER_FIELDS = [
         'id', 'order_no', 'status', 'total', 'shop', 'queue', 'payment_status', 'payment_method', 'paid_at', 'reason', 'items',
-        'created_at', 'accepted_at', 'preparing_at', 'ready_at', 'completed_at',
+        'created_at', 'pay_by', 'accepted_at', 'preparing_at', 'ready_at', 'completed_at',
     ];
     public const PAYMENT_METHODS = ['PAY_AT_STORE', 'PROMPTPAY'];
 
@@ -25,7 +25,9 @@ final class Orders
     {
         return \App\Payments\Payments::online() ? ['PAY_AT_STORE', OnlinePayments::METHOD] : self::PAYMENT_METHODS;
     }
+    /** Open orders as the shop sees them; online orders not yet paid (AWAITING_PAYMENT, D44) never reach the shop. */
     public const ACTIVE = "('PENDING','ACCEPTED','PREPARING','READY')";
+    private const CUSTOMER_ACTIVE = "('AWAITING_PAYMENT','PENDING','ACCEPTED','PREPARING','READY')";
 
     /** @return array{0: int, 1: bool} order id and whether it was created now */
     public static function create(int $userId, string $key, string $quote, string $method = 'PAY_AT_STORE'): array
@@ -96,9 +98,13 @@ final class Orders
         if (!hash_equals($priced['quote'], $quote)) {
             throw HttpError::conflict('PRICE_CHANGED', 'ราคาหรือรายการเปลี่ยนไป กรุณาตรวจสอบแล้วยืนยันใหม่', ['total' => $priced['total']]);
         }
+        // Online PromptPay is paid first (D44): the shop gets the order only when Stripe confirms the money.
+        $online = $method === OnlinePayments::METHOD;
+        $status = $online ? 'AWAITING_PAYMENT' : 'PENDING';
         $orderId = Database::insert('orders', [
-            'public_order_no' => self::orderNumber(), 'user_id' => $userId, 'shop_id' => $shopId, 'status' => 'PENDING',
+            'public_order_no' => self::orderNumber(), 'user_id' => $userId, 'shop_id' => $shopId, 'status' => $status,
             'total' => $priced['total'], 'idempotency_key' => $key, 'created_at' => Clock::now(),
+            'placed_at' => $online ? null : Clock::now(), 'pay_by' => $online ? OnlinePayments::deadline() : null,
         ]);
         foreach ($priced['items'] as $item) {
             $itemId = Database::insert('order_items', ['order_id' => $orderId, 'menu_id' => $item['menu_id'], 'name_snapshot' => $item['name'], 'unit_price' => $item['base_price'], 'quantity' => $item['quantity'], 'note' => $item['note']]);
@@ -107,7 +113,7 @@ final class Orders
             }
         }
         Database::insert('payments', ['order_id' => $orderId, 'amount' => $priced['total'], 'method' => $method, 'requested_method' => $method]);
-        Database::insert('order_status_logs', ['order_id' => $orderId, 'to_status' => 'PENDING', 'actor_user_id' => $userId, 'created_at' => Clock::now()]);
+        Database::insert('order_status_logs', ['order_id' => $orderId, 'to_status' => $status, 'actor_user_id' => $userId, 'created_at' => Clock::now()]);
         Database::run('DELETE FROM carts WHERE id = ?', [$cart['id']]);
         return [$orderId, true];
     }
@@ -130,8 +136,9 @@ final class Orders
     /** @return array{0: list<array>, 1: int} */
     public static function ofCustomer(int $userId, string $scope, int $limit, int $offset): array
     {
+        OnlinePayments::expireOverdue($userId);
         $where = 'o.user_id = ?' . match ($scope) {
-            'active' => ' AND o.status IN ' . self::ACTIVE,
+            'active' => ' AND o.status IN ' . self::CUSTOMER_ACTIVE,
             'completed' => " AND o.status = 'COMPLETED'",
             'cancelled' => " AND o.status IN ('CANCELLED','REJECTED')",
             default => '',
@@ -142,6 +149,8 @@ final class Orders
 
     public static function customerOrder(int $userId, int $orderId): array
     {
+        // An unpaid online order past its deadline is cancelled when it is looked at, not only by scripts/notify.php.
+        OnlinePayments::expireOverdue($userId, $orderId);
         [$rows] = self::page('o.id = ? AND o.user_id = ?', [$orderId, $userId], 'o.id', 1, 0);
         $order = self::forCustomer($rows[0] ?? throw HttpError::notFound('ไม่พบออเดอร์'));
         $order += Eta::order($orderId, $order['shop']['id'], $order['status']);
@@ -179,8 +188,8 @@ final class Orders
     public static function ofShop(int $shopId, string $scope, int $limit, int $offset): array
     {
         [$where, $sort] = $scope === 'closed'
-            ? ["o.shop_id = ? AND o.status IN ('COMPLETED','REJECTED','CANCELLED')", 'o.id DESC']
-            : ['o.shop_id = ? AND o.status IN ' . self::ACTIVE, 'q.business_date, q.queue_number, o.id'];
+            ? ["o.shop_id = ? AND o.placed_at IS NOT NULL AND o.status IN ('COMPLETED','REJECTED','CANCELLED')", 'o.id DESC']
+            : ['o.shop_id = ? AND o.placed_at IS NOT NULL AND o.status IN ' . self::ACTIVE, 'q.business_date, q.queue_number, o.placed_at, o.id'];
         [$rows, $total] = self::page($where, [$shopId], $sort, $limit, $offset);
         $due = OnlinePayments::refundDueOrders(array_column($rows, 'id'));
         return [array_map(static fn (array $o): array => self::forMerchant($o) + (isset($due[(int) $o['id']]) ? ['refund_due' => true] : []), $rows), $total];
@@ -188,7 +197,7 @@ final class Orders
 
     public static function shopOrder(int $orderId): array
     {
-        [$rows] = self::page('o.id = ?', [$orderId], 'o.id', 1, 0);
+        [$rows] = self::page('o.id = ? AND o.placed_at IS NOT NULL', [$orderId], 'o.id', 1, 0);
         return self::forMerchant($rows[0] ?? throw HttpError::notFound('ไม่พบออเดอร์'));
     }
 
@@ -198,7 +207,7 @@ final class Orders
      */
     private static function forMerchant(array $order): array
     {
-        unset($order['customer_name']);
+        unset($order['customer_name'], $order['pay_by']);
         $readyAt = $order['ready_at'] === null ? null : rtrim(str_replace('T', ' ', $order['ready_at']), 'Z');
         $order['can_no_show'] = $order['status'] === 'READY' && $order['payment_status'] === 'UNPAID' && OrderFlow::waitedLongEnough($readyAt);
         $order['order_no'] = substr($order['order_no'], 0, -4) . '••••';
@@ -216,7 +225,7 @@ final class Orders
                  LEFT JOIN queues q ON q.order_id = o.id LEFT JOIN payments p ON p.order_id = o.id';
         $total = (int) Database::value("SELECT COUNT(*) $from WHERE $where", $params);
         $rows = Database::rows(
-            "SELECT o.id, o.public_order_no, o.status, o.total, o.created_at, o.accepted_at, o.preparing_at, o.ready_at, o.completed_at,
+            "SELECT o.id, o.public_order_no, o.status, o.total, o.created_at, o.placed_at, o.pay_by, o.accepted_at, o.preparing_at, o.ready_at, o.completed_at,
                     o.shop_id, s.name AS shop_name, u.display_name AS customer_name, q.queue_number, q.business_date,
                     p.status AS payment_status, p.paid_at, IF(p.status = 'PAID', p.method, p.requested_method) AS method,
                     (SELECT l.reason FROM order_status_logs l WHERE l.order_id = o.id AND l.reason IS NOT NULL ORDER BY l.id DESC LIMIT 1) AS reason
@@ -230,7 +239,7 @@ final class Orders
             'queue' => $o['queue_number'] === null ? null : ['number' => $o['queue_number'], 'business_date' => $o['business_date']],
             'payment_status' => $o['payment_status'], 'payment_method' => $o['method'], 'paid_at' => Clock::iso($o['paid_at']),
             'reason' => $o['reason'], 'items' => $items[$o['id']] ?? [],
-            'created_at' => Clock::iso($o['created_at']), 'accepted_at' => Clock::iso($o['accepted_at']), 'preparing_at' => Clock::iso($o['preparing_at']),
+            'created_at' => Clock::iso($o['created_at']), 'placed_at' => Clock::iso($o['placed_at']), 'pay_by' => Clock::iso($o['pay_by']), 'accepted_at' => Clock::iso($o['accepted_at']), 'preparing_at' => Clock::iso($o['preparing_at']),
             'ready_at' => Clock::iso($o['ready_at']), 'completed_at' => Clock::iso($o['completed_at']),
         ], $rows), $total];
     }

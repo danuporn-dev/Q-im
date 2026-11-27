@@ -18,7 +18,8 @@ final class NotificationWorker
     public const SELECT =
         'SELECT n.id, n.event_type, n.dedupe_key, n.attempts, n.created_at, o.id AS order_id, o.status AS order_status, o.public_order_no, s.name AS shop_name,
                     q.queue_number, u.line_user_id, u.line_friend, u.active,
-                    (SELECT l.reason FROM order_status_logs l WHERE l.order_id = o.id AND l.reason IS NOT NULL ORDER BY l.id DESC LIMIT 1) AS reason
+                    (SELECT l.reason FROM order_status_logs l WHERE l.order_id = o.id AND l.reason IS NOT NULL ORDER BY l.id DESC LIMIT 1) AS reason,
+                    EXISTS (SELECT 1 FROM payment_intents pi WHERE pi.order_id = o.id AND pi.refund_due_at IS NOT NULL) AS refund_due
              FROM notifications n JOIN orders o ON o.id = n.order_id JOIN shops s ON s.id = o.shop_id
              JOIN users u ON u.id = n.user_id LEFT JOIN queues q ON q.order_id = o.id';
 
@@ -103,7 +104,10 @@ final class NotificationWorker
             'ORDER_REJECTED' => "{$n['shop_name']} ไม่สามารถรับออเดอร์ได้$reason",
             default => "{$n['shop_name']} ยกเลิกออเดอร์ของคุณ$reason",
         };
-        return "$text\nออเดอร์ {$n['public_order_no']}";
+        // Refused after the customer paid online (D44): say plainly that the money comes back.
+        $refund = in_array($n['event_type'], ['ORDER_REJECTED', 'ORDER_CANCELLED'], true) && !empty($n['refund_due'])
+            ? "\nเงินที่จ่ายออนไลน์จะได้รับคืน ร้านคืนผ่าน Stripe ติดต่อร้านถ้ายังไม่ได้รับ" : '';
+        return "$text$refund\nออเดอร์ {$n['public_order_no']}";
     }
 
     private static function text(array $n): string

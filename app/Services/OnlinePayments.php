@@ -17,9 +17,13 @@ use PDOException;
 use Throwable;
 
 /**
- * Online PromptPay through Stripe (D42, PAYMENT_MODE=gateway). The customer pays only after the shop accepted the
- * order. Only Stripe's word makes an order PAID: the signed webhook, or the server reading the PaymentIntent back;
- * never the customer's page. Amount and currency always come from the order on the server.
+ * Online PromptPay through Stripe (D42, PAYMENT_MODE=gateway). The customer pays at checkout (D44): the order waits as
+ * AWAITING_PAYMENT, unseen by the shop, and reaches the shop (PENDING) once Stripe confirms the money; unpaid by its
+ * deadline, it is cancelled. Only Stripe's word makes an order PAID: the signed webhook, or the server reading the
+ * PaymentIntent back; never the customer's page. Amount and currency always come from the order on the server.
+ *
+ * Starting, checking, switching and expiring one order run one at a time (a named database lock per order), and each
+ * changes the order only under its row lock, as the webhook does; so the two ways to pay never both win.
  */
 final class OnlinePayments
 {
@@ -27,20 +31,27 @@ final class OnlinePayments
     public const PROVIDER = 'stripe';
     /** Stripe's smallest PromptPay payment for a Thai account. */
     public const MIN_TOTAL = '10.00';
-    private const PAYABLE = ['PREPARING', 'READY'];
+    private const PAYABLE = ['AWAITING_PAYMENT'];
     private const OPEN = ['requires_payment_method', 'requires_confirmation', 'requires_action'];
 
-    /** How long the page shows a QR before asking for a fresh one; Stripe states no expiry for PromptPay. */
+    /** Minutes the customer has to pay after checkout (D44); the QR shows the same deadline. */
     public static function qrMinutes(): int
     {
         $value = Env::get('PROMPTPAY_QR_MINUTES', '10');
         return preg_match('/^\d{1,2}$/D', $value) && (int) $value >= 1 && (int) $value <= 60 ? (int) $value : 10;
     }
 
+    /** The payment deadline of an online order made now, in UTC. */
+    public static function deadline(): string
+    {
+        return gmdate('Y-m-d H:i:s', Clock::timestamp() + self::qrMinutes() * 60);
+    }
+
     /** What the customer's order page shows; null for orders that never chose online payment. */
     public static function forCustomer(int $orderId, string $status, string $paymentStatus, string $method): ?array
     {
         $requested = Database::value('SELECT requested_method FROM payments WHERE order_id = ?', [$orderId]);
+        $payBy = Database::value('SELECT pay_by FROM orders WHERE id = ?', [$orderId]) ?: null;
         $rows = Database::rows('SELECT active_order_id, status, qr_data, qr_image_url, hosted_url, qr_expires_at, succeeded_at, refund_due_at, refunded_at FROM payment_intents WHERE order_id = ? ORDER BY attempt', [$orderId]);
         if ($requested !== self::METHOD && $method !== self::METHOD && $rows === []) {
             return null;
@@ -52,12 +63,12 @@ final class OnlinePayments
         $paidOnline = $paymentStatus === 'PAID' && $method === self::METHOD;
         $state = match (true) {
             $paidOnline => 'paid',
-            in_array($status, ['CANCELLED', 'REJECTED', 'COMPLETED'], true) || $paymentStatus !== 'UNPAID' || $requested !== self::METHOD => 'closed',
-            !in_array($status, self::PAYABLE, true) => 'waiting_shop',
+            $status !== 'AWAITING_PAYMENT' || $paymentStatus !== 'UNPAID' || $requested !== self::METHOD => 'closed',
             $active !== null && $active['status'] === 'processing' => 'processing',
-            $active !== null && $active['qr_data'] !== null && $active['qr_expires_at'] !== null && $active['qr_expires_at'] > Clock::now() => 'qr',
-            // The QR was shown and its time is up: the customer asks for a new one (the same PaymentIntent if it still works).
-            $active !== null => 'expired',
+            // Past the deadline but not cancelled yet: Stripe could not be asked to cancel the QR just now.
+            $payBy !== null && $payBy <= Clock::now() => 'expired',
+            $active !== null && $active['qr_data'] !== null => 'qr',
+            // No QR yet: creating it at checkout failed, the customer asks again.
             default => 'payable',
         };
         $refundDue = false;
@@ -71,14 +82,21 @@ final class OnlinePayments
                 'image_url' => $active['qr_image_url'],
                 // Stripe's sandbox page with "authorise / fail" buttons; never shown with a live key.
                 'test_url' => Payments::sandbox() ? $active['hosted_url'] : null,
-                'expires_at' => Clock::iso($active['qr_expires_at']),
+                'expires_at' => Clock::iso($payBy),
             ] : null,
+            'pay_by' => $state === 'closed' || $state === 'paid' ? null : Clock::iso($payBy),
             'refund_due' => $refundDue,
         ];
     }
 
-    /** The customer asks for the QR: reuses the open PaymentIntent, or creates the order's next one. */
+    /** Right after checkout, or when the customer asks again: reuses the open PaymentIntent, or creates the order's next one. */
     public static function start(int $userId, int $orderId): void
+    {
+        self::own($userId, $orderId);
+        self::exclusive($orderId, static fn () => self::startLocked($userId, $orderId));
+    }
+
+    private static function startLocked(int $userId, int $orderId): void
     {
         $order = self::payable($userId, $orderId);
         $active = Database::row('SELECT * FROM payment_intents WHERE active_order_id = ?', [$orderId]);
@@ -88,7 +106,7 @@ final class OnlinePayments
         if ($active !== null) {
             $intent = self::call(static fn () => Payments::gateway()->retrieve($active['intent_id']));
             if ($intent['status'] === 'requires_action' && $intent['qr'] !== null) {
-                Database::run('UPDATE payment_intents SET status = ?, qr_data = ?, qr_image_url = ?, hosted_url = ?, qr_expires_at = ? WHERE id = ? AND active_order_id IS NOT NULL', [$intent['status'], $intent['qr']['data'], $intent['qr']['image_png'], $intent['qr']['hosted_url'], self::qrExpiry(), $active['id']]);
+                Database::run('UPDATE payment_intents SET status = ?, qr_data = ?, qr_image_url = ?, hosted_url = ?, qr_expires_at = ? WHERE id = ? AND active_order_id IS NOT NULL', [$intent['status'], $intent['qr']['data'], $intent['qr']['image_png'], $intent['qr']['hosted_url'], $order['pay_by'], $active['id']]);
                 return;
             }
             Database::tx(static fn () => self::apply($intent, 'start'));
@@ -97,10 +115,12 @@ final class OnlinePayments
             }
             Database::run('UPDATE payment_intents SET active_order_id = NULL WHERE id = ?', [$active['id']]);
         }
-        // The idempotency key is fixed per attempt, so two taps at once get the same PaymentIntent from Stripe.
+        // The idempotency key is fixed per attempt, so two taps at once get the same PaymentIntent from Stripe. It holds
+        // the random order number, not only the row id: ids start again after a database is rebuilt (qim_test, a demo
+        // reset), and Stripe keeps keys for 24 hours, refusing a known key with other parameters.
         $attempt = (int) Database::value('SELECT COALESCE(MAX(attempt), 0) + 1 FROM payment_intents WHERE order_id = ?', [$orderId]);
         $amount = Money::toSatang($order['total']);
-        $intent = self::call(static fn () => Payments::gateway()->createPromptPay($amount, 'THB', ['order_id' => (string) $orderId, 'order_no' => $order['public_order_no']], "qim-order-$orderId-$attempt", Env::get('STRIPE_PLACEHOLDER_EMAIL') ?: null));
+        $intent = self::call(static fn () => Payments::gateway()->createPromptPay($amount, 'THB', ['order_id' => (string) $orderId, 'order_no' => $order['public_order_no']], "qim-order-{$order['public_order_no']}-$orderId-$attempt", Env::get('STRIPE_PLACEHOLDER_EMAIL') ?: null));
         if ($intent['amount'] !== $amount || $intent['currency'] !== 'THB' || ($intent['metadata']['order_id'] ?? '') !== (string) $orderId || $intent['qr'] === null) {
             Log::write('payments', "created intent does not match order $orderId");
             throw new HttpError(502, 'GATEWAY_ERROR', 'ระบบชำระเงินออนไลน์ตอบไม่ถูกต้อง กรุณาลองใหม่ หรือเปลี่ยนเป็นจ่ายที่ร้าน');
@@ -109,7 +129,7 @@ final class OnlinePayments
             Database::insert('payment_intents', [
                 'order_id' => $orderId, 'active_order_id' => $orderId, 'provider' => self::PROVIDER, 'intent_id' => $intent['id'], 'amount' => $amount, 'currency' => 'THB',
                 'status' => $intent['status'], 'attempt' => $attempt, 'qr_data' => $intent['qr']['data'], 'qr_image_url' => $intent['qr']['image_png'],
-                'hosted_url' => $intent['qr']['hosted_url'], 'qr_expires_at' => self::qrExpiry(), 'created_at' => Clock::now(),
+                'hosted_url' => $intent['qr']['hosted_url'], 'qr_expires_at' => $order['pay_by'], 'created_at' => Clock::now(),
             ]);
         } catch (PDOException $e) {
             if (!Database::isDuplicate($e)) {
@@ -123,6 +143,13 @@ final class OnlinePayments
     public static function check(int $userId, int $orderId): void
     {
         self::own($userId, $orderId);
+        self::exclusive($orderId, static function () use ($orderId): void {
+            self::checkLocked($orderId);
+        });
+    }
+
+    private static function checkLocked(int $orderId): void
+    {
         $row = Database::row('SELECT intent_id FROM payment_intents WHERE order_id = ? AND succeeded_at IS NULL ORDER BY active_order_id IS NULL, attempt DESC LIMIT 1', [$orderId]);
         if ($row !== null) {
             $intent = self::call(static fn () => Payments::gateway()->retrieve($row['intent_id']));
@@ -130,20 +157,36 @@ final class OnlinePayments
         }
     }
 
-    /** "Pay at the shop instead": only after Stripe confirmed that the PaymentIntent is cancelled. */
+    /**
+     * "Pay at the shop instead" (D44): only while the order waits for its online payment, and only after Stripe
+     * confirmed that the PaymentIntent is cancelled; then the order reaches the shop as an ordinary pay-at-the-shop order.
+     */
     public static function switchToStore(int $userId, int $orderId): void
     {
+        self::own($userId, $orderId);
+        self::exclusive($orderId, static fn () => self::switchLocked($userId, $orderId));
+    }
+
+    private static function switchLocked(int $userId, int $orderId): void
+    {
         $order = self::own($userId, $orderId);
-        if ($order['requested_method'] !== self::METHOD) {
-            return;
+        if ($order['requested_method'] !== self::METHOD && $order['status'] !== 'AWAITING_PAYMENT') {
+            return; // already paying at the shop: a repeated tap
         }
-        if ($order['payment_status'] !== 'UNPAID' || in_array($order['status'], ['CANCELLED', 'REJECTED', 'COMPLETED'], true)) {
-            throw HttpError::conflict('ALREADY_PAID', 'ออเดอร์นี้ชำระแล้วหรือปิดแล้ว เปลี่ยนวิธีชำระไม่ได้');
+        if ($order['payment_status'] !== 'UNPAID') {
+            throw HttpError::conflict('ALREADY_PAID', 'ออเดอร์นี้ชำระแล้ว เปลี่ยนวิธีชำระไม่ได้');
+        }
+        if ($order['status'] !== 'AWAITING_PAYMENT') {
+            throw HttpError::conflict('INVALID_STATE', 'ออเดอร์นี้ปิดแล้ว เปลี่ยนวิธีชำระไม่ได้', ['status' => $order['status']]);
+        }
+        if ($order['pay_by'] !== null && $order['pay_by'] <= Clock::now()) {
+            self::expireLocked($orderId);
+            throw self::expiredError($orderId);
         }
         $active = Database::row('SELECT id, intent_id FROM payment_intents WHERE active_order_id = ?', [$orderId]);
         if ($active !== null) {
             try {
-                $intent = Payments::gateway()->cancel($active['intent_id'], 'qim-cancel-' . $active['id']);
+                $intent = Payments::gateway()->cancel($active['intent_id'], 'qim-cancel-' . $active['intent_id']);
             } catch (GatewayError $e) {
                 // Not cancelled: find out why, and record a payment that already went through.
                 $intent = self::call(static fn () => Payments::gateway()->retrieve($active['intent_id']));
@@ -158,17 +201,112 @@ final class OnlinePayments
                 throw new HttpError(502, 'GATEWAY_ERROR', 'ยกเลิกการชำระออนไลน์ไม่สำเร็จ กรุณาลองใหม่');
             }
         }
-        Database::tx(static function () use ($userId, $orderId, $active): void {
+        Database::tx(static function () use ($userId, $orderId): void {
+            // Lock order used everywhere: order, then its payment rows; a webhook in between is seen here.
+            $locked = Database::row('SELECT id, status FROM orders WHERE id = ? FOR UPDATE', [$orderId]);
             $payment = Database::row('SELECT id, status FROM payments WHERE order_id = ? FOR UPDATE', [$orderId]);
             if ($payment['status'] !== 'UNPAID') {
-                throw HttpError::conflict('ALREADY_PAID', 'ออเดอร์นี้ชำระแล้ว เปลี่ยนวิธีชำระไม่ได้');
+                throw HttpError::conflict('ALREADY_PAID', 'ชำระออนไลน์สำเร็จแล้ว ไม่ต้องจ่ายที่ร้าน');
             }
-            if ($active !== null) {
-                Database::run("UPDATE payment_intents SET status = 'canceled', active_order_id = NULL, qr_data = NULL, qr_expires_at = NULL WHERE id = ?", [$active['id']]);
+            if ($locked['status'] !== 'AWAITING_PAYMENT') {
+                throw HttpError::conflict('INVALID_STATE', 'ออเดอร์นี้ปิดแล้ว เปลี่ยนวิธีชำระไม่ได้', ['status' => $locked['status']]);
             }
+            Database::run("UPDATE payment_intents SET status = 'canceled', active_order_id = NULL, qr_data = NULL, qr_expires_at = NULL WHERE order_id = ? AND succeeded_at IS NULL", [$orderId]);
             Database::run("UPDATE payments SET method = 'PAY_AT_STORE', requested_method = 'PAY_AT_STORE' WHERE id = ?", [$payment['id']]);
+            OrderFlow::release($locked, $userId, 'เปลี่ยนเป็นจ่ายที่ร้าน');
             Audit::log($userId, 'payment.method_changed', 'order', $orderId, ['from' => self::METHOD, 'to' => 'PAY_AT_STORE']);
         });
+    }
+
+    /** Cron (scripts/notify.php): cancels unpaid online orders past their deadline. Returns how many were cancelled. */
+    public static function expireDue(int $limit = 50): int
+    {
+        $ids = array_map('intval', array_column(Database::rows("SELECT id FROM orders WHERE status = 'AWAITING_PAYMENT' AND pay_by <= ? ORDER BY pay_by LIMIT $limit", [Clock::now()]), 'id'));
+        $done = 0;
+        foreach ($ids as $id) {
+            try {
+                $done += self::exclusive($id, static fn (): bool => self::expireLocked($id)) ? 1 : 0;
+            } catch (HttpError) {
+                // Busy with the customer right now; the next run takes it.
+            }
+        }
+        return $done;
+    }
+
+    /** The same when a customer looks at their orders, so nobody waits for the cron. */
+    public static function expireOverdue(int $userId, ?int $orderId = null): void
+    {
+        $params = $orderId === null ? [$userId, Clock::now()] : [$userId, Clock::now(), $orderId];
+        $rows = Database::rows("SELECT id FROM orders WHERE user_id = ? AND status = 'AWAITING_PAYMENT' AND pay_by <= ?" . ($orderId === null ? '' : ' AND id = ?') . ' LIMIT 5', $params);
+        foreach (array_map('intval', array_column($rows, 'id')) as $id) {
+            try {
+                self::exclusive($id, static fn (): bool => self::expireLocked($id));
+            } catch (HttpError) {
+                // Another request is handling this order now.
+            }
+        }
+    }
+
+    /**
+     * Cancels the order when it is still unpaid after its deadline. First asks Stripe to cancel the PaymentIntent: a
+     * payment that went through just before is recorded instead (the order reaches the shop). If Stripe cannot be
+     * reached the order is cancelled all the same, and money that still arrives is marked refund due by apply().
+     */
+    private static function expireLocked(int $orderId): bool
+    {
+        $order = Database::row('SELECT status, pay_by FROM orders WHERE id = ?', [$orderId]);
+        if ($order === null || $order['status'] !== 'AWAITING_PAYMENT' || $order['pay_by'] === null || $order['pay_by'] > Clock::now()) {
+            return false;
+        }
+        $open = Database::row('SELECT id, intent_id FROM payment_intents WHERE active_order_id = ? AND succeeded_at IS NULL', [$orderId]);
+        if ($open !== null) {
+            try {
+                $intent = Payments::gateway()->cancel($open['intent_id'], 'qim-cancel-' . $open['intent_id']);
+            } catch (Throwable $e) {
+                try {
+                    $intent = Payments::gateway()->retrieve($open['intent_id']);
+                } catch (Throwable) {
+                    $intent = null;
+                }
+                Log::write('payments', "deadline of order $orderId: intent not cancelled (" . StripeGateway::redact($e->getMessage()) . ')');
+            }
+            if ($intent !== null && Database::tx(static fn () => self::apply($intent, 'deadline')) === 'paid') {
+                return false;
+            }
+        }
+        return Database::tx(static function () use ($orderId): bool {
+            $locked = Database::row('SELECT id, status FROM orders WHERE id = ? FOR UPDATE', [$orderId]);
+            $payment = Database::row('SELECT status FROM payments WHERE order_id = ? FOR UPDATE', [$orderId]);
+            if ($locked['status'] !== 'AWAITING_PAYMENT' || $payment['status'] !== 'UNPAID') {
+                return false;
+            }
+            Database::run('UPDATE payment_intents SET active_order_id = NULL, qr_data = NULL, qr_expires_at = NULL WHERE order_id = ? AND succeeded_at IS NULL', [$orderId]);
+            OrderFlow::expireUnpaid($locked);
+            Audit::log(null, 'order.payment_expired', 'order', $orderId, []);
+            return true;
+        });
+    }
+
+    private static function expiredError(int $orderId): HttpError
+    {
+        return HttpError::conflict('PAYMENT_EXPIRED', 'หมดเวลาชำระเงิน ออเดอร์ถูกยกเลิกแล้ว กรุณาสั่งใหม่', ['order_id' => $orderId]);
+    }
+
+    /**
+     * Runs $work while holding the order's named lock, so start, check, switch and expiry of one order never overlap.
+     * The webhook does not take it: it changes the order only under the row locks, which every one of them re-checks.
+     */
+    private static function exclusive(int $orderId, callable $work): mixed
+    {
+        $name = 'qim-pay-' . substr(md5((string) Database::value('SELECT DATABASE()')), 0, 12) . '-' . $orderId;
+        if ((int) Database::value('SELECT GET_LOCK(?, 10)', [$name]) !== 1) {
+            throw HttpError::conflict('PAYMENT_BUSY', 'กำลังดำเนินการกับการชำระเงินของออเดอร์นี้ กรุณาลองใหม่');
+        }
+        try {
+            return $work();
+        } finally {
+            Database::value('SELECT RELEASE_LOCK(?)', [$name]);
+        }
     }
 
     /**
@@ -228,7 +366,7 @@ final class OnlinePayments
             return 'unknown';
         }
         // Lock order used everywhere: order, then its payment rows.
-        $order = Database::row('SELECT id, status, total, shop_id FROM orders WHERE id = ? FOR UPDATE', [$orderId]);
+        $order = Database::row('SELECT id, status, total, shop_id, user_id FROM orders WHERE id = ? FOR UPDATE', [$orderId]);
         $row = Database::row('SELECT * FROM payment_intents WHERE provider = ? AND intent_id = ? FOR UPDATE', [self::PROVIDER, $intent['id']]);
         $payment = Database::row('SELECT id, status FROM payments WHERE order_id = ? FOR UPDATE', [$orderId]);
         if ($intent['status'] !== 'succeeded') {
@@ -260,22 +398,32 @@ final class OnlinePayments
         $now = Clock::now();
         Database::run('UPDATE payment_intents SET status = ?, succeeded_at = ?, qr_data = NULL, qr_expires_at = NULL WHERE id = ?', [$intent['status'], $now, $row['id']]);
         if (in_array($order['status'], ['CANCELLED', 'REJECTED'], true) || $payment['status'] !== 'UNPAID') {
-            $reason = $payment['status'] !== 'UNPAID' ? 'ชำระซ้ำ: ออเดอร์ชำระแล้วด้วยวิธีอื่น' : 'เงินเข้าหลังออเดอร์ถูกยกเลิก';
+            $reason = match (true) {
+                $payment['status'] !== 'UNPAID' => 'ชำระซ้ำ: ออเดอร์ชำระแล้วด้วยวิธีอื่น',
+                Database::value('SELECT 1 FROM order_status_logs WHERE order_id = ? AND from_status = ? AND to_status = ?', [$orderId, 'AWAITING_PAYMENT', 'CANCELLED']) !== false => 'เงินเข้าหลังหมดเวลาชำระ',
+                default => 'เงินเข้าหลังออเดอร์ถูกยกเลิก',
+            };
             self::refundDue((int) $row['id'], $orderId, $reason, null);
             return 'refund_due';
         }
         Database::run("UPDATE payments SET status = 'PAID', method = ?, requested_method = ?, paid_at = ?, confirmed_by = NULL WHERE id = ?", [self::METHOD, self::METHOD, $now, $payment['id']]);
         Audit::log(null, 'payment.confirm', 'order', $orderId, ['amount' => $order['total'], 'method' => self::METHOD, 'intent' => $intent['id'], 'source' => $source]);
+        if ($order['status'] === 'AWAITING_PAYMENT') {
+            // Paid: only now does the order reach the shop (D44). Money that came before the deadline counts even
+            // when the cancellation had not run yet; after it, the order stays cancelled (refund due above).
+            Database::run('UPDATE payment_intents SET active_order_id = NULL WHERE order_id = ? AND id <> ? AND succeeded_at IS NULL', [$orderId, $row['id']]);
+            OrderFlow::release($order, null, 'ชำระออนไลน์สำเร็จ');
+        }
         return 'paid';
     }
 
-    /** In the shop's cancel transaction: money already received online must go back (by hand, D42). */
+    /** In the shop's reject or cancel transaction: money already received online must go back (by hand, D42). */
     public static function cancelledByShop(int $orderId, int $actorId, string $reason): void
     {
         $paid = Database::row("SELECT pi.id FROM payment_intents pi JOIN payments p ON p.order_id = pi.order_id AND p.status = 'PAID' AND p.method = ?
                                WHERE pi.order_id = ? AND pi.succeeded_at IS NOT NULL AND pi.refund_due_at IS NULL FOR UPDATE", [self::METHOD, $orderId]);
         if ($paid !== null) {
-            self::refundDue((int) $paid['id'], $orderId, 'ร้านยกเลิกหลังลูกค้าชำระ: ' . $reason, $actorId);
+            self::refundDue((int) $paid['id'], $orderId, $reason, $actorId);
         }
     }
 
@@ -290,7 +438,7 @@ final class OnlinePayments
             return;
         }
         try {
-            $intent = Payments::gateway()->cancel($open['intent_id'], 'qim-cancel-' . $open['id']);
+            $intent = Payments::gateway()->cancel($open['intent_id'], 'qim-cancel-' . $open['intent_id']);
             Database::tx(static fn () => self::apply($intent, 'order_closed'));
         } catch (Throwable $e) {
             Log::write('payments', "could not cancel intent of order $orderId: " . StripeGateway::redact($e->getMessage()));
@@ -338,7 +486,7 @@ final class OnlinePayments
             }
             Database::run('UPDATE payment_intents SET refunded_at = ?, refunded_by = ?, refund_note = ? WHERE id = ?', [Clock::now(), $actorId, $note, $rowId]);
             // The online payment of a cancelled order went back: it is REFUNDED (D42); cash payments are untouched.
-            if ($order['status'] === 'CANCELLED') {
+            if (in_array($order['status'], ['CANCELLED', 'REJECTED'], true)) {
                 Database::run("UPDATE payments SET status = 'REFUNDED' WHERE order_id = ? AND status = 'PAID' AND method = ?", [$orderId, self::METHOD]);
             }
             Audit::log($actorId, 'payment.refunded', 'order', (int) $orderId, ['note' => $note]);
@@ -364,7 +512,7 @@ final class OnlinePayments
     private static function own(int $userId, int $orderId): array
     {
         return Database::row(
-            'SELECT o.id, o.status, o.total, o.public_order_no, p.status AS payment_status, p.requested_method FROM orders o JOIN payments p ON p.order_id = o.id WHERE o.id = ? AND o.user_id = ?',
+            'SELECT o.id, o.status, o.total, o.public_order_no, o.pay_by, p.status AS payment_status, p.requested_method FROM orders o JOIN payments p ON p.order_id = o.id WHERE o.id = ? AND o.user_id = ?',
             [$orderId, $userId]
         ) ?? throw HttpError::notFound('ไม่พบออเดอร์');
     }
@@ -382,14 +530,13 @@ final class OnlinePayments
             throw HttpError::conflict('ALREADY_PAID', 'ออเดอร์นี้ชำระแล้ว');
         }
         if (!in_array($order['status'], self::PAYABLE, true)) {
-            throw HttpError::conflict('NOT_PAYABLE', 'จ่ายออนไลน์ได้เมื่อร้านรับออเดอร์แล้ว', ['status' => $order['status']]);
+            throw HttpError::conflict('NOT_PAYABLE', 'ออเดอร์นี้ไม่ได้รอชำระออนไลน์แล้ว', ['status' => $order['status']]);
+        }
+        if ($order['pay_by'] !== null && $order['pay_by'] <= Clock::now()) {
+            self::expireLocked($orderId);
+            throw self::expiredError($orderId);
         }
         return $order;
-    }
-
-    private static function qrExpiry(): string
-    {
-        return gmdate('Y-m-d H:i:s', Clock::timestamp() + self::qrMinutes() * 60);
     }
 
     /** Runs a gateway call; its failures become a safe answer for the customer and a log line without keys. */

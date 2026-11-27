@@ -81,6 +81,7 @@ export const METHOD = { PAY_AT_STORE: 'ชำระที่ร้าน (เง
 export const queueNo = (n) => 'Q-' + String(n).padStart(3, '0');
 
 export const STATUS = {
+  AWAITING_PAYMENT: ['รอชำระเงิน', 'wait', '฿'],
   PENDING: ['รอร้านยืนยัน', 'wait', '…'],
   ACCEPTED: ['รอทำอาหาร', 'info', '≡'],
   PREPARING: ['กำลังทำ', 'info', '♨'],

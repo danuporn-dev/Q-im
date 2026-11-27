@@ -42,10 +42,18 @@ final class CustomerController
             throw HttpError::invalid('วิธีชำระไม่ถูกต้อง', ['field' => 'payment_method']);
         }
         [$id, $created] = Orders::create($user['id'], $key, $quote, $method);
+        if ($method === OnlinePayments::METHOD) {
+            // Pay at checkout (D44): the QR comes with the answer. If Stripe fails now, the order page offers to try
+            // again or to pay at the shop; the order itself is saved either way.
+            try {
+                OnlinePayments::start($user['id'], $id);
+            } catch (HttpError) {
+            }
+        }
         return [Orders::customerOrder($user['id'], $id), $created ? 201 : 200];
     }
 
-    /** Shows the PromptPay QR of an order paid online (D42), creating the PaymentIntent the first time. */
+    /** Shows the PromptPay QR of an order paid online (D42, D44), creating the PaymentIntent the first time. */
     public static function onlinePayment(Request $q, int $id): array
     {
         $user = Auth::user($q, 'customer');

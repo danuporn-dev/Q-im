@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-// Online PromptPay in a real headless browser (D42), with FakeGateway. Skipped without Chrome or Edge.
+// Online PromptPay in a real headless browser (D42, paid at checkout D44), with FakeGateway. Skipped without Chrome or Edge.
 
 use App\Payments\FakeGateway;
 use App\Payments\StripeSignature;
@@ -37,51 +37,52 @@ $cartWith = static fn () => $c->put("$a/cart", ['shop_id' => $s['shop'], 'items'
 
 $b = new Browser($binary, 9392);
 try {
-    T::group('T53 customer pays online in the browser');
+    T::group('T53 customer pays online in the browser, right after confirming (D44)');
     $b->size(390, 844);
     $cartWith();
     $b->open("$gw/customer/");
     $b->click('ต้นกล้า');
     $b->until("document.querySelector('[data-bell]')");
     $b->open("$gw/customer/#/cart");
-    T::ok($b->sees('จ่ายออนไลน์ (PromptPay)'), 'checkout offers online PromptPay');
+    T::ok($b->sees('จ่ายออนไลน์ (PromptPay)') && $b->sees('สแกนจ่ายทันทีหลังยืนยัน'), 'checkout offers online PromptPay, paid at once');
     T::eq(false, (bool) $b->js("[...document.querySelectorAll('input[name=payment_method]')].some((e) => e.value === 'PROMPTPAY')"), "the shop's own PromptPay tile is hidden in gateway mode");
     $b->js("document.querySelector('input[value=STRIPE_PROMPTPAY]').click()");
     $b->click('ยืนยันออเดอร์');
-    T::ok($b->sees('ปุ่มชำระจะแสดงเมื่อร้านรับออเดอร์'), 'no QR before the shop accepts');
+    T::ok($b->sees('จ่ายภายใน') && (bool) $b->until("document.querySelector('.payqr .qr img')") && $b->sees('รอชำระเงิน'), 'the QR and the countdown show at once, before anything else');
+    T::ok($b->sees('฿45') && $b->sees('บันทึกรูป QR') && $b->sees('ตรวจสถานะการชำระ') && $b->sees('เปลี่ยนเป็นจ่ายที่ร้าน'), 'amount, save, check and switch buttons');
     $order = $latest();
-    T::eq('STRIPE_PROMPTPAY', Database::value('SELECT requested_method FROM payments WHERE order_id = ?', [$order]), 'saved as online PromptPay');
-    $m->post("$a/merchant/orders/$order/accept");
-    T::ok($b->sees('แสดง QR จ่าย ฿45', 15), 'after accepting: pay button');
-    $b->click('แสดง QR จ่าย ฿45');
-    T::ok($b->sees('QR ใช้ได้อีก') && (bool) $b->until("document.querySelector('.payqr .qr img')"), 'QR with a countdown');
-    T::ok($b->sees('บันทึกรูป QR') && $b->sees('ตรวจสถานะการชำระ') && $b->sees('เปลี่ยนเป็นจ่ายที่ร้าน'), 'save, check and switch buttons');
+    T::eq(['STRIPE_PROMPTPAY', 'AWAITING_PAYMENT'], [Database::value('SELECT requested_method FROM payments WHERE order_id = ?', [$order]), Database::value('SELECT status FROM orders WHERE id = ?', [$order])], 'saved as online PromptPay, waiting for the money');
+    T::ok(!in_array($order, array_column($m->get("$a/merchant/shops/{$s['shop']}/orders")['body']['data'] ?? [], 'id'), true), 'the shop does not see it yet');
     $webhook(FakeGateway::change($fake, $intentOf($order), ['status' => 'succeeded']));
-    T::ok($b->sees('ชำระแล้วออนไลน์', 15), 'paid shows up by itself (polling)');
+    T::ok($b->sees('ชำระแล้วออนไลน์', 15) && $b->sees('รอร้านยืนยัน'), 'paid shows up by itself (polling); the order now waits for the shop');
 
     $cartWith();
     $b->open("$gw/customer/#/cart");
     $b->until("document.querySelector('input[value=STRIPE_PROMPTPAY]')");
     $b->js("document.querySelector('input[value=STRIPE_PROMPTPAY]').click()");
     $b->click('ยืนยันออเดอร์');
-    $b->sees('ปุ่มชำระจะแสดงเมื่อร้านรับออเดอร์');
+    $b->sees('จ่ายภายใน');
     $second = $latest();
-    $m->post("$a/merchant/orders/$second/accept");
-    $b->sees('แสดง QR จ่าย', 15);
-    $b->click('แสดง QR จ่าย');
-    $b->sees('QR ใช้ได้อีก');
-    Database::run('UPDATE payment_intents SET qr_expires_at = ? WHERE order_id = ?', [gmdate('Y-m-d H:i:s', time() + 3), $second]);
-    $b->reload();
-    T::ok($b->sees('QR หมดอายุแล้ว', 15) && $b->sees('ขอ QR ใหม่'), 'expired QR: ask for a new one');
-    $b->click('ขอ QR ใหม่');
-    T::ok($b->sees('QR ใช้ได้อีก') && (int) Database::value('SELECT COUNT(*) FROM payment_intents WHERE order_id = ?', [$second]) === 1, 'new QR, same PaymentIntent');
     $b->click('เปลี่ยนเป็นจ่ายที่ร้าน');
     $b->click('เปลี่ยนเป็นจ่ายที่ร้าน', $dialog);
-    T::ok($b->sees('ชำระที่ร้านตอนรับอาหาร', 15) && !$b->js("!!document.querySelector('.payqr')"), 'switched to paying at the shop');
-    T::eq('canceled', (new FakeGateway($fake))->retrieve($intentOf($second))['status'], 'the PaymentIntent was cancelled first');
+    T::ok($b->sees('ชำระที่ร้านตอนรับอาหาร', 15) && $b->sees('รอร้านยืนยัน') && !$b->js("!!document.querySelector('.payqr')"), 'switched to paying at the shop; the order went to the shop');
+    T::eq(['canceled', 'PENDING'], [(new FakeGateway($fake))->retrieve($intentOf($second))['status'], Database::value('SELECT status FROM orders WHERE id = ?', [$second])], 'the PaymentIntent was cancelled first');
+
+    $cartWith();
+    $b->open("$gw/customer/#/cart");
+    $b->until("document.querySelector('input[value=STRIPE_PROMPTPAY]')");
+    $b->js("document.querySelector('input[value=STRIPE_PROMPTPAY]').click()");
+    $b->click('ยืนยันออเดอร์');
+    $b->sees('จ่ายภายใน');
+    $third = $latest();
+    Database::run('UPDATE orders SET pay_by = ? WHERE id = ?', [gmdate('Y-m-d H:i:s', time() + 3), $third]);
+    $b->reload();
+    T::ok($b->sees('ออเดอร์ถูกยกเลิก', 20) && $b->sees('หมดเวลาชำระเงิน'), 'the countdown ends: the order is cancelled for lack of payment');
+    T::eq('CANCELLED', Database::value('SELECT status FROM orders WHERE id = ?', [$third]), 'cancelled on the server');
     T::eq([], $b->errors, 'no script errors');
 
     T::group('T55 the shop sees online payments, hands over without taking money, and lists refunds');
+    $m->post("$a/merchant/orders/$order/accept");
     $m->post("$a/merchant/orders/$order/ready");
     $b->size(1280, 800);
     $b->open("$gw/merchant/");
@@ -97,10 +98,10 @@ try {
     T::eq(['COMPLETED', 0], [Database::value('SELECT status FROM orders WHERE id = ?', [$order]), (int) $b->js("[...document.querySelectorAll('button')].filter((e) => e.innerText.includes('ได้รับเงินแล้ว')).length")], 'no money button was needed');
     $cartWith();
     $paidOrder = (int) $c->post("$a/orders", ['idempotency_key' => bin2hex(random_bytes(16)), 'quote' => $c->get("$a/cart")['body']['data']['quote'], 'payment_method' => 'STRIPE_PROMPTPAY'])['body']['data']['id'];
-    $m->post("$a/merchant/orders/$paidOrder/accept");
-    $c->post("$a/orders/$paidOrder/online-payment");
+    $b->js("location.hash='#/'");
     $webhook(FakeGateway::change($fake, $intentOf($paidOrder), ['status' => 'succeeded']));
-    $m->post("$a/merchant/orders/$paidOrder/cancel", ['reason' => 'แก๊สหมด']);
+    T::ok($b->sees('ออเดอร์ใหม่ 1', 15), 'the paid order rings the bell');
+    $m->post("$a/merchant/orders/$paidOrder/reject", ['reason' => 'แก๊สหมด']);
     $b->js("location.hash='#/refunds'");
     T::ok($b->sees('รอคืนเงิน ตั้งแต่') && $b->sees($intentOf($paidOrder)), 'refunds page lists it with the Stripe id');
     $b->click('ทำเครื่องหมายคืนเงินแล้ว');

@@ -239,7 +239,7 @@ final class Admin
     {
         $where = 'o.public_order_no LIKE ?';
         $params = [self::like($q)];
-        if (preg_match('/^[A-Z]{4,10}$/D', $status)) {
+        if (preg_match('/^[A-Z_]{4,20}$/D', $status)) {
             $where .= ' AND o.status = ?';
             $params[] = $status;
         }
